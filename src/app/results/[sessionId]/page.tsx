@@ -318,7 +318,69 @@ export default function ExamResultDetailPage() {
           )}
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Mobile Cards for Section Breakdown (< md) */}
+        <div className="grid gap-3 md:hidden">
+          {summary.sectionBreakdown.map((sec) => (
+            <div
+              key={sec.sectionId}
+              className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-2.5"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <span className="font-bold text-xs text-indigo-700 mr-1.5">{sec.sectionId}</span>
+                  <span className="rounded bg-white px-1.5 py-0.5 font-mono text-[10px] text-slate-600 border border-slate-200">
+                    {sec.syllabusCode}
+                  </span>
+                  <div className="mt-1 text-xs font-bold text-slate-900">{sec.sectionTitle}</div>
+                </div>
+                <Link
+                  href={`/generator?section=${sec.sectionId}`}
+                  className="shrink-0 rounded-lg border border-indigo-200 bg-white px-2.5 py-1 text-[11px] font-bold text-indigo-600"
+                >
+                  Drill {sec.sectionId}
+                </Link>
+              </div>
+
+              <div className="grid grid-cols-4 gap-1.5 text-center text-[11px]">
+                <div className="rounded bg-white py-1 border border-slate-200/70">
+                  <div className="text-slate-400">Total</div>
+                  <div className="font-bold text-slate-800">{sec.totalQuestions}</div>
+                </div>
+                <div className="rounded bg-white py-1 border border-slate-200/70">
+                  <div className="text-slate-400">Tried</div>
+                  <div className="font-bold text-slate-800">{sec.attempted}</div>
+                </div>
+                <div className="rounded bg-emerald-50 py-1 border border-emerald-200/70">
+                  <div className="text-emerald-700">Right</div>
+                  <div className="font-bold text-emerald-700">{sec.correct}</div>
+                </div>
+                <div className="rounded bg-rose-50 py-1 border border-rose-200/70">
+                  <div className="text-rose-700">Wrong</div>
+                  <div className="font-bold text-rose-700">{sec.wrong}</div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200">
+                  <div
+                    className={`h-full rounded-full ${
+                      sec.scorePercent >= 80
+                        ? 'bg-emerald-500'
+                        : sec.scorePercent >= 50
+                        ? 'bg-indigo-500'
+                        : 'bg-rose-500'
+                    }`}
+                    style={{ width: `${sec.scorePercent}%` }}
+                  />
+                </div>
+                <span className="text-xs font-bold text-slate-800">{sec.scorePercent}%</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Desktop Table for Section Breakdown (md+) */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs sm:text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-xs uppercase tracking-wider text-slate-500">

@@ -10,9 +10,11 @@ import {
   CheckCircle2,
   Clock,
   Flag,
+  LayoutGrid,
   Lightbulb,
   Lock,
   SkipForward,
+  X,
   XCircle,
 } from 'lucide-react';
 import {
@@ -34,6 +36,7 @@ export default function InteractiveExamPage() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
+  const [mobilePaletteOpen, setMobilePaletteOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const elapsedRef = useRef(0);
@@ -83,7 +86,6 @@ export default function InteractiveExamPage() {
     const timer = setInterval(() => {
       setElapsedSeconds((prev) => {
         const next = prev + 1;
-        // Persist timer checkpoint every 5 seconds
         if (next % 5 === 0) {
           updateSessionProgress(session.id, { elapsedSeconds: next }).catch(() => {});
         }
@@ -113,7 +115,6 @@ export default function InteractiveExamPage() {
   const handleSelectOption = useCallback(
     async (optionKey: OptionKey) => {
       if (!session || !currentQuestion || submitting) return;
-      // Layer 1 Guard: Never allow re-choosing an already answered question
       if (session.answers[currentQuestion.id]) return;
 
       const record: LockedAnswerRecord = {
@@ -123,7 +124,6 @@ export default function InteractiveExamPage() {
         lockedAt: new Date().toISOString(),
       };
 
-      // Optimistic immediate UI lock
       setSession((prev) => {
         if (!prev || prev.answers[currentQuestion.id]) return prev;
         return {
@@ -135,7 +135,6 @@ export default function InteractiveExamPage() {
         };
       });
 
-      // Layer 2 Atomic IndexedDB write-once lock
       const persisted = await lockSessionAnswer(
         session.id,
         currentQuestion.id,
@@ -154,6 +153,7 @@ export default function InteractiveExamPage() {
       if (!session) return;
       const bounded = Math.max(0, Math.min(idx, session.questionsSnapshot.length - 1));
       setCurrentIndex(bounded);
+      setMobilePaletteOpen(false);
       updateSessionProgress(session.id, {
         currentIndex: bounded,
         elapsedSeconds: elapsedRef.current,
@@ -175,10 +175,10 @@ export default function InteractiveExamPage() {
     }
   }, [session, currentIndex, goToQuestion]);
 
-  // Keyboard shortcuts: A/B/C/D or 1/2/3/4 when unlocked, Left/Right arrows to navigate
+  // Keyboard shortcuts
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (showSubmitConfirm) return;
+      if (showSubmitConfirm || mobilePaletteOpen) return;
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
 
@@ -224,6 +224,7 @@ export default function InteractiveExamPage() {
     totalQuestions,
     goToQuestion,
     showSubmitConfirm,
+    mobilePaletteOpen,
   ]);
 
   const liveStats = useMemo(() => {
@@ -270,32 +271,82 @@ export default function InteractiveExamPage() {
   const isLowTime = remainingSeconds !== null && remainingSeconds <= 120;
   const progressPercent = Math.round((liveStats.answered / totalQuestions) * 100);
 
+  const renderPaletteGrid = () => (
+    <>
+      <div className="grid grid-cols-6 sm:grid-cols-8 lg:grid-cols-5 xl:grid-cols-6 gap-2 max-h-72 overflow-y-auto pr-1">
+        {session.questionsSnapshot.map((q, idx) => {
+          const ans = session.answers[q.id];
+          const isCurrent = idx === currentIndex;
+
+          let tileClass = 'border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300';
+          if (ans?.isCorrect) {
+            tileClass = 'border-emerald-500 bg-emerald-500 text-white font-bold';
+          } else if (ans && !ans.isCorrect) {
+            tileClass = 'border-rose-500 bg-rose-500 text-white font-bold';
+          }
+
+          return (
+            <button
+              key={q.id}
+              type="button"
+              onClick={() => goToQuestion(idx)}
+              className={`flex h-9 w-full items-center justify-center rounded-lg border text-xs transition cursor-pointer ${tileClass} ${
+                isCurrent ? 'ring-2 ring-indigo-600 ring-offset-1' : ''
+              }`}
+            >
+              {idx + 1}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Palette Legend */}
+      <div className="grid grid-cols-3 gap-2 border-t border-slate-100 pt-3 text-[11px] text-slate-600">
+        <div className="flex items-center gap-1.5">
+          <span className="h-3 w-3 rounded bg-emerald-500 inline-block shrink-0" />
+          <span className="truncate">Correct ({liveStats.correct})</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="h-3 w-3 rounded bg-rose-500 inline-block shrink-0" />
+          <span className="truncate">Wrong ({liveStats.wrong})</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="h-3 w-3 rounded border border-slate-300 bg-slate-50 inline-block shrink-0" />
+          <span className="truncate">Open ({liveStats.remaining})</span>
+        </div>
+      </div>
+    </>
+  );
+
   return (
-    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 space-y-6">
-      {/* Top Sticky Exam Status Header */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-3">
+    <div className="mx-auto max-w-7xl px-3 py-4 pb-24 sm:px-6 sm:py-6 lg:pb-8 lg:px-8 space-y-4 sm:space-y-6">
+      {/* Top Exam Status Header */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-3.5 sm:p-4 shadow-xs space-y-3">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-base sm:text-lg font-bold text-slate-900">{session.title}</h1>
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+          <div className="min-w-0">
+            <h1 className="truncate text-sm sm:text-lg font-bold text-slate-900">
+              {session.title}
+            </h1>
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] sm:text-xs">
               <span className="rounded-md bg-slate-100 px-2 py-0.5 font-semibold text-slate-700">
-                Answered: {liveStats.answered} / {totalQuestions}
+                Locked: {liveStats.answered}/{totalQuestions}
               </span>
               <span className="rounded-md bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700">
-                Correct: {liveStats.correct}
+                Right: {liveStats.correct}
               </span>
               <span className="rounded-md bg-rose-50 px-2 py-0.5 font-semibold text-rose-700">
                 Wrong: {liveStats.wrong}
               </span>
               <span className="rounded-md bg-amber-50 px-2 py-0.5 font-semibold text-amber-800">
-                Unanswered: {liveStats.remaining}
+                Left: {liveStats.remaining}
               </span>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2">
+            {/* Timer Pill */}
             <div
-              className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold ring-1 ${
+              className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold ring-1 ${
                 remainingSeconds !== null
                   ? isLowTime
                     ? 'bg-rose-50 text-rose-700 ring-rose-300 animate-pulse'
@@ -303,11 +354,23 @@ export default function InteractiveExamPage() {
                   : 'bg-slate-100 text-slate-700 ring-slate-200'
               }`}
             >
-              <Clock className="h-4 w-4" />
-              {remainingSeconds !== null
-                ? `Time Left: ${formatDuration(remainingSeconds)}`
-                : `Elapsed: ${formatDuration(elapsedSeconds)}`}
+              <Clock className="h-3.5 w-3.5 shrink-0" />
+              <span>
+                {remainingSeconds !== null
+                  ? formatDuration(remainingSeconds)
+                  : formatDuration(elapsedSeconds)}
+              </span>
             </div>
+
+            {/* Mobile Question Palette Drawer Trigger (< lg) */}
+            <button
+              type="button"
+              onClick={() => setMobilePaletteOpen(true)}
+              className="inline-flex lg:hidden items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer"
+            >
+              <LayoutGrid className="h-3.5 w-3.5 text-indigo-600" />
+              Palette ({liveStats.answered}/{totalQuestions})
+            </button>
 
             <button
               type="button"
@@ -319,10 +382,10 @@ export default function InteractiveExamPage() {
                 }
               }}
               disabled={submitting}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-xs transition hover:bg-indigo-700 disabled:opacity-60 cursor-pointer"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-1.5 sm:px-4 sm:py-2 text-xs font-bold text-white shadow-xs transition hover:bg-indigo-700 disabled:opacity-60 cursor-pointer"
             >
-              <Flag className="h-3.5 w-3.5" />
-              {submitting ? 'Submitting...' : 'Finish & View Result'}
+              <Flag className="h-3.5 w-3.5 shrink-0" />
+              <span>{submitting ? 'Submitting...' : 'Finish Exam'}</span>
             </button>
           </div>
         </div>
@@ -336,16 +399,16 @@ export default function InteractiveExamPage() {
         </div>
       </div>
 
-      {/* Main Workspace: Question Stage + Palette */}
+      {/* Main Workspace: Question Stage + Desktop Palette Sidebar */}
       <div className="grid gap-6 lg:grid-cols-12 lg:items-start">
         {/* Question Card */}
         <div className="lg:col-span-8 space-y-4">
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-7 shadow-xs space-y-6">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-7 shadow-xs space-y-5 sm:space-y-6">
             {/* Question Metadata Row */}
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-4">
-              <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3.5">
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                 <span className="rounded-lg bg-indigo-600 px-2.5 py-1 text-xs font-bold text-white">
-                  Question {currentIndex + 1} of {totalQuestions}
+                  Q {currentIndex + 1} / {totalQuestions}
                 </span>
                 <span className="rounded-lg bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">
                   Sec {currentQuestion.sectionId} • {currentQuestion.syllabusCode}
@@ -356,14 +419,14 @@ export default function InteractiveExamPage() {
               </div>
 
               {isLocked ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white">
-                  <Lock className="h-3 w-3" />
-                  Option Locked ({lockedRecord?.selectedOption})
+                <span className="inline-flex items-center gap-1 rounded-full bg-slate-900 px-2.5 py-1 text-[11px] sm:text-xs font-semibold text-white">
+                  <Lock className="h-3 w-3 shrink-0" />
+                  Locked ({lockedRecord?.selectedOption})
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800 ring-1 ring-amber-200">
-                  <Lock className="h-3 w-3" />
-                  Select once — cannot change after click
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] sm:text-xs font-medium text-amber-800 ring-1 ring-amber-200">
+                  <Lock className="h-3 w-3 shrink-0" />
+                  Locks on first click
                 </span>
               )}
             </div>
@@ -374,52 +437,49 @@ export default function InteractiveExamPage() {
             </h2>
 
             {/* Four Options (A, B, C, D) */}
-            <div className="space-y-3" role="radiogroup" aria-label="Answer options">
+            <div className="space-y-2.5 sm:space-y-3" role="radiogroup" aria-label="Answer options">
               {OPTION_KEYS.map((key) => {
                 const isSelected = lockedRecord?.selectedOption === key;
                 const isActualCorrect = currentQuestion.correctOption === key;
 
                 let cardClasses =
                   'border-slate-200 bg-white hover:border-indigo-400 hover:bg-indigo-50/40 cursor-pointer';
-                let letterClasses = 'bg-slate-100 text-slate-700 group-hover:bg-indigo-600 group-hover:text-white';
+                let letterClasses =
+                  'bg-slate-100 text-slate-700 group-hover:bg-indigo-600 group-hover:text-white';
                 let badgeNode: ReactNode = null;
 
                 if (isLocked) {
                   if (isSelected && lockedRecord?.isCorrect) {
-                    // User chose RIGHT option
                     cardClasses =
                       'border-emerald-500 bg-emerald-50/90 ring-2 ring-emerald-500/20 cursor-not-allowed';
                     letterClasses = 'bg-emerald-600 text-white';
                     badgeNode = (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2.5 py-0.5 text-xs font-bold text-white shrink-0">
-                        <CheckCircle2 className="h-3.5 w-3.5" />
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2.5 py-0.5 text-[11px] sm:text-xs font-bold text-white shrink-0">
+                        <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
                         Correct!
                       </span>
                     );
                   } else if (isSelected && !lockedRecord?.isCorrect) {
-                    // User chose WRONG option -> Red
                     cardClasses =
                       'border-rose-500 bg-rose-50/90 ring-2 ring-rose-500/20 cursor-not-allowed';
                     letterClasses = 'bg-rose-600 text-white';
                     badgeNode = (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-rose-600 px-2.5 py-0.5 text-xs font-bold text-white shrink-0">
-                        <XCircle className="h-3.5 w-3.5" />
+                      <span className="inline-flex items-center gap-1 rounded-full bg-rose-600 px-2.5 py-0.5 text-[11px] sm:text-xs font-bold text-white shrink-0">
+                        <XCircle className="h-3.5 w-3.5 shrink-0" />
                         Your Choice (Wrong)
                       </span>
                     );
                   } else if (!isSelected && isActualCorrect) {
-                    // Reveal actual CORRECT option in Green when user picked wrong!
                     cardClasses =
                       'border-emerald-500 bg-emerald-50/90 ring-2 ring-emerald-500/20 cursor-not-allowed';
                     letterClasses = 'bg-emerald-600 text-white';
                     badgeNode = (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2.5 py-0.5 text-xs font-bold text-white shrink-0">
-                        <CheckCircle2 className="h-3.5 w-3.5" />
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2.5 py-0.5 text-[11px] sm:text-xs font-bold text-white shrink-0">
+                        <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
                         Correct Option
                       </span>
                     );
                   } else {
-                    // Unselected distractor after lock
                     cardClasses = 'border-slate-200 bg-slate-50/60 opacity-60 cursor-not-allowed';
                     letterClasses = 'bg-slate-200 text-slate-500';
                   }
@@ -432,19 +492,19 @@ export default function InteractiveExamPage() {
                     disabled={isLocked}
                     aria-disabled={isLocked}
                     onClick={() => handleSelectOption(key)}
-                    className={`group flex w-full items-center justify-between gap-3 rounded-xl border-2 p-4 text-left transition ${cardClasses}`}
+                    className={`group flex w-full flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 rounded-xl border-2 p-3.5 sm:p-4 text-left transition ${cardClasses}`}
                   >
-                    <div className="flex items-center gap-3.5 min-w-0">
+                    <div className="flex items-start sm:items-center gap-3 min-w-0">
                       <span
-                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sm font-bold transition ${letterClasses}`}
+                        className={`flex h-7 w-7 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-lg text-xs sm:text-sm font-bold transition ${letterClasses}`}
                       >
                         {key}
                       </span>
-                      <span className="text-sm sm:text-base font-medium text-slate-900 break-words">
+                      <span className="text-sm sm:text-base font-medium text-slate-900 break-words leading-snug">
                         {currentQuestion.options[key]}
                       </span>
                     </div>
-                    {badgeNode}
+                    {badgeNode && <div className="pl-10 sm:pl-0">{badgeNode}</div>}
                   </button>
                 );
               })}
@@ -453,35 +513,35 @@ export default function InteractiveExamPage() {
             {/* Instant Valid Reason / Explanation Reveal */}
             {isLocked && lockedRecord && (
               <div
-                className={`rounded-2xl border-2 p-5 space-y-2 transition-all ${
+                className={`rounded-2xl border-2 p-4 sm:p-5 space-y-2 transition-all ${
                   lockedRecord.isCorrect
                     ? 'border-emerald-200 bg-emerald-50/70 text-emerald-950'
                     : 'border-amber-300 bg-amber-50/80 text-slate-900'
                 }`}
               >
-                <div className="flex items-center gap-2">
+                <div className="flex items-start gap-2">
                   {lockedRecord.isCorrect ? (
-                    <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+                    <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
                   ) : (
-                    <Lightbulb className="h-5 w-5 text-amber-600 shrink-0" />
+                    <Lightbulb className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
                   )}
-                  <h3 className="text-sm font-bold">
+                  <h3 className="text-xs sm:text-sm font-bold leading-snug">
                     {lockedRecord.isCorrect
                       ? `Spot On! Option ${currentQuestion.correctOption} is Correct.`
-                      : `Incorrect Choice (${lockedRecord.selectedOption}) — The Correct Option is ${currentQuestion.correctOption}: "${
+                      : `Incorrect Choice (${lockedRecord.selectedOption}) — Correct Option is ${currentQuestion.correctOption}: "${
                           currentQuestion.options[currentQuestion.correctOption]
                         }"`}
                   </h3>
                 </div>
-                <p className="text-sm leading-relaxed pl-7 text-slate-800">
+                <p className="text-xs sm:text-sm leading-relaxed sm:pl-7 text-slate-800">
                   <strong className="font-semibold">Reason / Explanation: </strong>
                   {currentQuestion.reason}
                 </p>
               </div>
             )}
 
-            {/* Navigation Footer */}
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
+            {/* Desktop Navigation Footer */}
+            <div className="hidden sm:flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
               <button
                 type="button"
                 disabled={currentIndex === 0}
@@ -530,7 +590,7 @@ export default function InteractiveExamPage() {
             </div>
           </div>
 
-          <p className="text-xs text-slate-400 text-center">
+          <p className="hidden sm:block text-xs text-slate-400 text-center">
             Keyboard shortcuts: Press <kbd className="rounded border px-1">A</kbd>–
             <kbd className="rounded border px-1">D</kbd> (or <kbd className="rounded border px-1">1</kbd>–
             <kbd className="rounded border px-1">4</kbd>) to lock an option •{' '}
@@ -539,59 +599,114 @@ export default function InteractiveExamPage() {
           </p>
         </div>
 
-        {/* Right Sidebar: Question Navigator Palette */}
-        <div className="lg:col-span-4 lg:sticky lg:top-20 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
+        {/* Desktop Right Sidebar: Question Navigator Palette */}
+        <div className="hidden lg:block lg:col-span-4 lg:sticky lg:top-24 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold text-slate-900">Question Palette</h3>
             <span className="text-xs text-slate-500">
               {liveStats.answered}/{totalQuestions} Locked
             </span>
           </div>
+          {renderPaletteGrid()}
+        </div>
+      </div>
 
-          <div className="grid grid-cols-6 sm:grid-cols-8 lg:grid-cols-5 xl:grid-cols-6 gap-2 max-h-80 overflow-y-auto pr-1">
-            {session.questionsSnapshot.map((q, idx) => {
-              const ans = session.answers[q.id];
-              const isCurrent = idx === currentIndex;
+      {/* Mobile Sticky Bottom Question Navigation Bar (< sm) */}
+      <div className="no-print fixed bottom-0 inset-x-0 z-30 border-t border-slate-200 bg-white/95 backdrop-blur px-3 py-2.5 sm:hidden">
+        <div className="flex items-center justify-between gap-2">
+          <button
+            type="button"
+            disabled={currentIndex === 0}
+            onClick={() => goToQuestion(currentIndex - 1)}
+            className="inline-flex items-center justify-center gap-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 disabled:opacity-40"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Prev
+          </button>
 
-              let tileClass = 'border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300';
-              if (ans?.isCorrect) {
-                tileClass = 'border-emerald-500 bg-emerald-500 text-white font-bold';
-              } else if (ans && !ans.isCorrect) {
-                tileClass = 'border-rose-500 bg-rose-500 text-white font-bold';
-              }
+          <button
+            type="button"
+            onClick={() => setMobilePaletteOpen(true)}
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-800"
+          >
+            <LayoutGrid className="h-3.5 w-3.5 text-indigo-600" />
+            {currentIndex + 1} / {totalQuestions}
+          </button>
 
-              return (
+          {currentIndex < totalQuestions - 1 ? (
+            <button
+              type="button"
+              onClick={() => goToQuestion(currentIndex + 1)}
+              className="inline-flex items-center justify-center gap-1 rounded-xl bg-slate-900 px-3.5 py-2 text-xs font-bold text-white"
+            >
+              Next
+              <ArrowRight className="h-4 w-4" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                if (liveStats.remaining > 0) setShowSubmitConfirm(true);
+                else finalizeExam();
+              }}
+              className="inline-flex items-center justify-center gap-1 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-bold text-white"
+            >
+              <Flag className="h-3.5 w-3.5" />
+              Submit
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Mobile Slide-Over Question Palette Drawer */}
+      {mobilePaletteOpen && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/50 backdrop-blur-xs lg:hidden">
+          <div className="w-full max-w-lg rounded-t-2xl sm:rounded-2xl bg-white p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Question Navigator</h3>
+                <p className="text-xs text-slate-500">
+                  Tap any question number to jump directly
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMobilePaletteOpen(false)}
+                className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {renderPaletteGrid()}
+
+            <div className="flex items-center justify-between gap-2 pt-2">
+              {liveStats.remaining > 0 && (
                 <button
-                  key={q.id}
                   type="button"
-                  onClick={() => goToQuestion(idx)}
-                  className={`flex h-9 w-full items-center justify-center rounded-lg border text-xs transition cursor-pointer ${tileClass} ${
-                    isCurrent ? 'ring-2 ring-indigo-600 ring-offset-2' : ''
-                  }`}
+                  onClick={goToNextUnanswered}
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 py-2.5 text-xs font-bold text-indigo-700"
                 >
-                  {idx + 1}
+                  <SkipForward className="h-3.5 w-3.5" />
+                  Next Unanswered
                 </button>
-              );
-            })}
-          </div>
-
-          {/* Palette Legend */}
-          <div className="grid grid-cols-3 gap-2 border-t border-slate-100 pt-3 text-[11px] text-slate-600">
-            <div className="flex items-center gap-1.5">
-              <span className="h-3 w-3 rounded bg-emerald-500 inline-block" />
-              Correct ({liveStats.correct})
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="h-3 w-3 rounded bg-rose-500 inline-block" />
-              Wrong ({liveStats.wrong})
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="h-3 w-3 rounded border border-slate-300 bg-slate-50 inline-block" />
-              Open ({liveStats.remaining})
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setMobilePaletteOpen(false);
+                  if (liveStats.remaining > 0) setShowSubmitConfirm(true);
+                  else finalizeExam();
+                }}
+                className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-indigo-600 py-2.5 text-xs font-bold text-white"
+              >
+                <Flag className="h-3.5 w-3.5" />
+                Submit Exam
+              </button>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Unanswered Confirmation Modal */}
       {showSubmitConfirm && (
@@ -603,7 +718,9 @@ export default function InteractiveExamPage() {
             </div>
             <p className="text-sm text-slate-600 leading-relaxed">
               You still have{' '}
-              <strong className="text-slate-900">{liveStats.remaining} unanswered question(s)</strong>{' '}
+              <strong className="text-slate-900">
+                {liveStats.remaining} unanswered question(s)
+              </strong>{' '}
               out of {totalQuestions}. Unanswered questions will be marked as skipped in your final
               report.
             </p>

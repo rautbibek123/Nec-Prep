@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -10,6 +10,7 @@ import {
   Clock,
   Layers,
   Play,
+  Settings2,
   Shuffle,
   Sparkles,
   Square,
@@ -28,6 +29,7 @@ import { ExamSession, MCQQuestion, QuestionPoolFilter } from '@/types/mcq';
 function GeneratorContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const configCardRef = useRef<HTMLDivElement | null>(null);
 
   const [questions, setQuestions] = useState<MCQQuestion[]>([]);
   const [pastSessions, setPastSessions] = useState<ExamSession[]>([]);
@@ -275,46 +277,46 @@ function GeneratorContent() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 space-y-6">
+    <div className="mx-auto max-w-7xl px-3 py-6 pb-28 sm:px-6 sm:py-8 lg:pb-8 lg:px-8 space-y-6">
       {/* Page Title & Quick Presets */}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
             Chapter-Wise &amp; Section-Wise Question Generator
           </h1>
-          <p className="text-sm text-slate-600">
+          <p className="text-xs sm:text-sm text-slate-600 mt-1">
             Select chapters or sub-topics from the NEC Software Engineering (ASoE) syllabus, choose
             question count &amp; timer, and begin your locked exam.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
           <span className="text-xs font-semibold text-slate-500 mr-1">Presets:</span>
           <button
             type="button"
             onClick={() => applyPreset('drill20')}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-indigo-300 hover:text-indigo-700 cursor-pointer"
+            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:border-indigo-300 hover:text-indigo-700 cursor-pointer"
           >
             Quick 20 (20m)
           </button>
           <button
             type="button"
             onClick={() => applyPreset('chapter30')}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-indigo-300 hover:text-indigo-700 cursor-pointer"
+            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:border-indigo-300 hover:text-indigo-700 cursor-pointer"
           >
             Standard 30 (30m)
           </button>
           <button
             type="button"
             onClick={() => applyPreset('mock100')}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-indigo-300 hover:text-indigo-700 cursor-pointer"
+            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:border-indigo-300 hover:text-indigo-700 cursor-pointer"
           >
             NEC Mock 100 (120m)
           </button>
           <button
             type="button"
             onClick={() => applyPreset('allUntimed')}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-indigo-300 hover:text-indigo-700 cursor-pointer"
+            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:border-indigo-300 hover:text-indigo-700 cursor-pointer"
           >
             Full Bank (Untimed)
           </button>
@@ -324,11 +326,10 @@ function GeneratorContent() {
       <div className="grid gap-6 lg:grid-cols-12 lg:items-start">
         {/* Left Column: Syllabus Chapters & Sub-sections Tree */}
         <div className="lg:col-span-7 xl:col-span-8 space-y-3">
-          <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs">
             <span className="font-semibold text-slate-700">
               Selected: {selectedSectionList.length} section
-              {selectedSectionList.length === 1 ? '' : 's'} across {selectedChaptersList.length}{' '}
-              chapter{selectedChaptersList.length === 1 ? '' : 's'}
+              {selectedSectionList.length === 1 ? '' : 's'} ({eligiblePool.length} Qs)
             </span>
             <div className="flex items-center gap-3">
               <button
@@ -372,13 +373,13 @@ function GeneratorContent() {
                   selectedInCh > 0 ? 'border-indigo-300 shadow-xs' : 'border-slate-200'
                 }`}
               >
-                <div className="flex items-center justify-between gap-3 p-4">
-                  <div className="flex items-center gap-3 min-w-0">
+                <div className="flex items-start sm:items-center justify-between gap-2.5 p-3.5 sm:p-4">
+                  <div className="flex items-start sm:items-center gap-2.5 min-w-0">
                     <button
                       type="button"
                       disabled={chTotal === 0}
                       onClick={() => toggleChapter(ch.chapterNumber)}
-                      className={`shrink-0 transition ${
+                      className={`mt-0.5 sm:mt-0 shrink-0 transition ${
                         chTotal === 0
                           ? 'cursor-not-allowed text-slate-300'
                           : 'cursor-pointer text-indigo-600 hover:text-indigo-700'
@@ -401,41 +402,45 @@ function GeneratorContent() {
                     <button
                       type="button"
                       onClick={() => toggleExpandChapter(ch.chapterNumber)}
-                      className="flex items-center gap-2 text-left min-w-0 cursor-pointer"
+                      className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 text-left min-w-0 cursor-pointer"
                     >
-                      {isExpanded ? (
-                        <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
-                      ) : (
-                        <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
-                      )}
-                      <span className="rounded bg-slate-900 px-2 py-0.5 text-xs font-bold text-white shrink-0">
-                        Ch {ch.chapterNumber}
+                      <div className="flex items-center gap-1.5">
+                        {isExpanded ? (
+                          <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+                        )}
+                        <span className="rounded bg-slate-900 px-2 py-0.5 text-[11px] font-bold text-white shrink-0">
+                          Ch {ch.chapterNumber}
+                        </span>
+                        <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-slate-600 shrink-0">
+                          {ch.chapterCode}
+                        </span>
+                      </div>
+                      <span className="font-bold text-xs sm:text-sm text-slate-900 line-clamp-2 sm:truncate">
+                        {ch.title}
                       </span>
-                      <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-slate-600 shrink-0">
-                        {ch.chapterCode}
-                      </span>
-                      <span className="font-bold text-sm text-slate-900 truncate">{ch.title}</span>
                     </button>
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
                     {chTotal > 0 ? (
-                      <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
-                        {chTotal} MCQs
+                      <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] sm:text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                        {chTotal} Qs
                       </span>
                     ) : (
                       <Link
                         href="/upload"
                         className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-500 hover:bg-indigo-50 hover:text-indigo-700"
                       >
-                        0 MCQs • Upload
+                        Upload
                       </Link>
                     )}
                   </div>
                 </div>
 
                 {isExpanded && (
-                  <div className="border-t border-slate-100 divide-y divide-slate-100 px-4 py-1">
+                  <div className="border-t border-slate-100 divide-y divide-slate-100 px-3.5 sm:px-4 py-1">
                     {ch.sections.map((sec) => {
                       const count = sectionCounts.get(sec.sectionId) ?? 0;
                       const checked = selectedSections.has(sec.sectionId);
@@ -446,15 +451,15 @@ function GeneratorContent() {
                             count > 0 ? 'cursor-pointer hover:bg-slate-50/80' : 'opacity-50'
                           }`}
                         >
-                          <div className="flex items-start gap-2.5">
+                          <div className="flex items-start gap-2.5 min-w-0">
                             <input
                               type="checkbox"
                               disabled={count === 0}
                               checked={checked}
                               onChange={() => toggleSection(sec.sectionId)}
-                              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                              className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                             />
-                            <div>
+                            <div className="min-w-0">
                               <div className="font-semibold text-slate-800">
                                 <span className="font-mono text-indigo-700 mr-1.5">
                                   {sec.sectionId}
@@ -489,7 +494,10 @@ function GeneratorContent() {
         </div>
 
         {/* Right Sticky Column: Exam Settings & Launch */}
-        <div className="lg:col-span-5 xl:col-span-4 lg:sticky lg:top-20 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-5">
+        <div
+          ref={configCardRef}
+          className="lg:col-span-5 xl:col-span-4 lg:sticky lg:top-28 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-sm space-y-5"
+        >
           <div>
             <h2 className="text-lg font-bold text-slate-900">Exam Configuration</h2>
             <p className="text-xs text-slate-500">
@@ -684,6 +692,43 @@ function GeneratorContent() {
           </button>
         </div>
       </div>
+
+      {/* Mobile Floating Action Bar (< lg) */}
+      <div className="no-print fixed bottom-14 md:bottom-0 inset-x-0 z-30 border-t border-slate-200 bg-white/95 backdrop-blur px-3 py-2.5 lg:hidden shadow-lg">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-2">
+          <div className="min-w-0">
+            <div className="text-xs font-bold text-slate-900 truncate">
+              {effectiveCount} MCQs •{' '}
+              {timeLimitMinutes !== null ? `${timeLimitMinutes}m Timer` : 'Untimed'}
+            </div>
+            <div className="text-[11px] text-slate-500 truncate">
+              {selectedSectionList.length} section(s) • Pool: {eligiblePool.length}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() =>
+                configCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+              }
+              className="inline-flex items-center gap-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700"
+            >
+              <Settings2 className="h-3.5 w-3.5" />
+              Settings
+            </button>
+            <button
+              type="button"
+              disabled={eligiblePool.length === 0 || launching}
+              onClick={handleStartExam}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white disabled:opacity-50"
+            >
+              <Play className="h-3.5 w-3.5 fill-current" />
+              Start ({effectiveCount})
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -701,4 +746,3 @@ export default function GeneratorPage() {
     </Suspense>
   );
 }
-

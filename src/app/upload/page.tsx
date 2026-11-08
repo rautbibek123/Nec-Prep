@@ -446,15 +446,15 @@ export default function UploadExcelPage() {
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative">
+            <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 w-full md:w-auto">
+              <div className="relative flex-1 sm:flex-initial">
                 <Search className="pointer-events-none absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
                 <input
                   type="text"
                   placeholder="Search questions..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="rounded-lg border border-slate-300 py-1.5 pl-8 pr-3 text-xs focus:border-indigo-500 focus:outline-none"
+                  className="w-full sm:w-52 rounded-lg border border-slate-300 py-1.5 pl-8 pr-3 text-xs focus:border-indigo-500 focus:outline-none"
                 />
               </div>
 
@@ -464,7 +464,7 @@ export default function UploadExcelPage() {
                   setFilterChapter(e.target.value);
                   setFilterSection('all');
                 }}
-                className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-medium focus:border-indigo-500 focus:outline-none"
+                className="w-full sm:w-auto rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-medium focus:border-indigo-500 focus:outline-none"
               >
                 <option value="all">All Chapters</option>
                 {NEC_ASOE_SYLLABUS.map((c) => (
@@ -477,7 +477,7 @@ export default function UploadExcelPage() {
               <select
                 value={filterSection}
                 onChange={(e) => setFilterSection(e.target.value)}
-                className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-medium focus:border-indigo-500 focus:outline-none"
+                className="w-full sm:w-auto rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-medium focus:border-indigo-500 focus:outline-none"
               >
                 <option value="all">All Sections</option>
                 {availableSections.map((sec) => (
