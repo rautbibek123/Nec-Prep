@@ -1,9 +1,29 @@
 @import "tailwindcss";
 
 @layer base {
+  html {
+    overscroll-behavior-y: contain;
+  }
+
   body {
     @apply bg-slate-50 text-slate-900 antialiased selection:bg-indigo-100 selection:text-indigo-900;
+    -webkit-tap-highlight-color: transparent;
   }
+
+  button,
+  a,
+  [role="button"] {
+    touch-action: manipulation;
+  }
+
+  :focus-visible {
+    outline: 2px solid #4f46e5;
+    outline-offset: 2px;
+  }
+}
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 .no-scrollbar::-webkit-scrollbar {
@@ -14,6 +34,17 @@
   scrollbar-width: none;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 @media print {
   .no-print {
     display: none !important;
@@ -22,4 +53,3 @@
     background: #ffffff !important;
   }
 }
-

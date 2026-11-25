@@ -6,9 +6,11 @@ import Link from 'next/link';
 import {
   AlertTriangle,
   Award,
+  Bookmark,
   CheckCircle2,
   Clock,
   Download,
+  FileText,
   Lightbulb,
   MinusCircle,
   Printer,
@@ -17,10 +19,16 @@ import {
   SlidersHorizontal,
   XCircle,
 } from 'lucide-react';
-import { createSession, getSessionById } from '@/lib/db';
+import { useAuth } from '@/components/AuthProvider';
+import {
+  createSession,
+  getSessionById,
+  getUserStatsMap,
+  toggleQuestionBookmark,
+} from '@/lib/db';
 import { buildRemediationSession } from '@/lib/exam-generator';
 import { calculateExamSummary, formatDuration } from '@/lib/scoring';
-import { ExamSession, OPTION_KEYS } from '@/types/mcq';
+import { ExamSession, MCQQuestion, OPTION_KEYS, QuestionStatRecord } from '@/types/mcq';
 
 type ReviewTab = 'all' | 'wrong' | 'correct' | 'skipped';
 
@@ -28,8 +36,10 @@ export default function ExamResultDetailPage() {
   const params = useParams<{ sessionId: string }>();
   const sessionId = params.sessionId;
   const router = useRouter();
+  const { user } = useAuth();
 
   const [session, setSession] = useState<ExamSession | null>(null);
+  const [statsMap, setStatsMap] = useState<Map<string, QuestionStatRecord>>(new Map());
   const [loading, setLoading] = useState(true);
   const [reviewTab, setReviewTab] = useState<ReviewTab>('all');
   const [sectionFilter, setSectionFilter] = useState<string>('all');
@@ -40,10 +50,13 @@ export default function ExamResultDetailPage() {
     let active = true;
     (async () => {
       try {
-        const s = await getSessionById(sessionId);
+        const [s, st] = await Promise.all([
+          getSessionById(sessionId),
+          getUserStatsMap(user.id),
+        ]);
         if (!active) return;
         setSession(s ?? null);
-        // Default to 'wrong' review tab if user made mistakes, else 'all'
+        setStatsMap(st);
         if (s) {
           const hasWrong = Object.values(s.answers).some((a) => !a.isCorrect);
           if (hasWrong) setReviewTab('wrong');
@@ -55,7 +68,7 @@ export default function ExamResultDetailPage() {
     return () => {
       active = false;
     };
-  }, [sessionId]);
+  }, [sessionId, user.id]);
 
   const summary = useMemo(
     () => (session ? calculateExamSummary(session) : null),
@@ -109,8 +122,10 @@ export default function ExamResultDetailPage() {
     setRetrying(true);
     try {
       const newSession = buildRemediationSession({
+        userId: session.userId || user.id,
         title: `Retry Mistakes — ${session.title}`,
         questions: subset,
+        mode: 'practice',
         timeLimitMinutes: null,
       });
       await createSession(newSession);
@@ -118,6 +133,34 @@ export default function ExamResultDetailPage() {
     } finally {
       setRetrying(false);
     }
+  };
+
+  const handleToggleBookmark = async (q: MCQQuestion) => {
+    const activeUserId = session?.userId || user.id;
+    const next = await toggleQuestionBookmark(activeUserId, q);
+    setStatsMap((prev) => {
+      const copy = new Map(prev);
+      const old = copy.get(q.id);
+      copy.set(
+        q.id,
+        old
+          ? { ...old, bookmarked: next }
+          : {
+              key: `${activeUserId}::${q.id}`,
+              userId: activeUserId,
+              questionId: q.id,
+              sectionId: q.sectionId,
+              chapterNumber: q.chapterNumber,
+              attempts: 0,
+              correctCount: 0,
+              wrongCount: 0,
+              lastIsCorrect: null,
+              lastAttemptedAt: null,
+              bookmarked: next,
+            }
+      );
+      return copy;
+    });
   };
 
   const handleExportCsv = () => {
@@ -195,6 +238,11 @@ export default function ExamResultDetailPage() {
                   ? `NEC PASS BENCHMARK MET (≥ ${summary.passThresholdPercent}%)`
                   : `BELOW NEC PASS BENCHMARK (${summary.passThresholdPercent}%)`}
               </span>
+              {session.setNumber && (
+                <span className="rounded-full bg-indigo-500/30 px-2.5 py-0.5 text-xs font-semibold text-indigo-200">
+                  Set #{session.setNumber}
+                </span>
+              )}
               <span className="text-xs text-slate-400">
                 Completed{' '}
                 {new Date(session.completedAt ?? session.createdAt).toLocaleString()}
@@ -231,11 +279,11 @@ export default function ExamResultDetailPage() {
               )}
 
               <Link
-                href={`/generator?chapter=${session.config.selectedChapters[0] ?? 1}`}
+                href={session.setNumber ? '/sets' : `/generator?chapter=${session.config.selectedChapters[0] ?? 1}`}
                 className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-500 px-4 py-2 text-xs font-bold text-white transition hover:bg-indigo-400"
               >
                 <SlidersHorizontal className="h-3.5 w-3.5" />
-                New Exam
+                {session.setNumber ? 'All Test Sets' : 'New Exam'}
               </Link>
 
               <button
@@ -299,12 +347,65 @@ export default function ExamResultDetailPage() {
         </div>
       </section>
 
-      {/* Section-Wise Syllabus Performance Breakdown (Upgraded Excel Summary Sheet) */}
+      {/* Chapter Summary Cards (especially useful for 100-Q 10-chapter sets) */}
+      {summary.chapterBreakdown.length > 1 && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-xs space-y-4">
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">Chapter-Wise Performance</h2>
+            <p className="text-xs text-slate-500">
+              Your accuracy across each NEC chapter in this exam.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            {summary.chapterBreakdown.map((ch) => (
+              <div
+                key={ch.chapterNumber}
+                className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-2"
+              >
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-900">
+                    Ch {ch.chapterNumber} ({ch.chapterCode})
+                  </span>
+                  <span
+                    className={`font-bold ${
+                      ch.scorePercent >= 80
+                        ? 'text-emerald-600'
+                        : ch.scorePercent >= 50
+                        ? 'text-indigo-600'
+                        : 'text-rose-600'
+                    }`}
+                  >
+                    {ch.scorePercent}%
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-500 line-clamp-1">{ch.chapterTitle}</div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+                  <div
+                    className={`h-full rounded-full ${
+                      ch.scorePercent >= 80
+                        ? 'bg-emerald-500'
+                        : ch.scorePercent >= 50
+                        ? 'bg-indigo-500'
+                        : 'bg-rose-500'
+                    }`}
+                    style={{ width: `${ch.scorePercent}%` }}
+                  />
+                </div>
+                <div className="text-[11px] text-slate-600">
+                  {ch.correct}/{ch.totalQuestions} right
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Section-Wise Syllabus Performance Breakdown */}
       <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-xs space-y-4">
         <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-lg font-bold text-slate-900">
-              Chapter &amp; Section-Wise Syllabus Breakdown
+              Section-Wise Syllabus Breakdown
             </h2>
             <p className="text-xs text-slate-500">
               Performance across official Nepal Engineering Council (ASoE) syllabus sections
@@ -318,7 +419,6 @@ export default function ExamResultDetailPage() {
           )}
         </div>
 
-        {/* Mobile Cards for Section Breakdown (< md) */}
         <div className="grid gap-3 md:hidden">
           {summary.sectionBreakdown.map((sec) => (
             <div
@@ -340,26 +440,6 @@ export default function ExamResultDetailPage() {
                   Drill {sec.sectionId}
                 </Link>
               </div>
-
-              <div className="grid grid-cols-4 gap-1.5 text-center text-[11px]">
-                <div className="rounded bg-white py-1 border border-slate-200/70">
-                  <div className="text-slate-400">Total</div>
-                  <div className="font-bold text-slate-800">{sec.totalQuestions}</div>
-                </div>
-                <div className="rounded bg-white py-1 border border-slate-200/70">
-                  <div className="text-slate-400">Tried</div>
-                  <div className="font-bold text-slate-800">{sec.attempted}</div>
-                </div>
-                <div className="rounded bg-emerald-50 py-1 border border-emerald-200/70">
-                  <div className="text-emerald-700">Right</div>
-                  <div className="font-bold text-emerald-700">{sec.correct}</div>
-                </div>
-                <div className="rounded bg-rose-50 py-1 border border-rose-200/70">
-                  <div className="text-rose-700">Wrong</div>
-                  <div className="font-bold text-rose-700">{sec.wrong}</div>
-                </div>
-              </div>
-
               <div className="flex items-center gap-2">
                 <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200">
                   <div
@@ -379,7 +459,6 @@ export default function ExamResultDetailPage() {
           ))}
         </div>
 
-        {/* Desktop Table for Section Breakdown (md+) */}
         <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs sm:text-sm">
             <thead>
@@ -452,8 +531,8 @@ export default function ExamResultDetailPage() {
               Detailed Question &amp; Explanation Review
             </h2>
             <p className="text-xs text-slate-500">
-              Inspect every question, compare your locked choice against the correct option, and
-              study the explanation.
+              Compare your choices against correct options, bookmark tricky MCQs, and study the
+              explanation.
             </p>
           </div>
 
@@ -481,6 +560,7 @@ export default function ExamResultDetailPage() {
             ))}
 
             <select
+              aria-label="Filter review by section"
               value={sectionFilter}
               onChange={(e) => setSectionFilter(e.target.value)}
               className="rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs font-medium"
@@ -497,6 +577,7 @@ export default function ExamResultDetailPage() {
               <Search className="pointer-events-none absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-400" />
               <input
                 type="text"
+                aria-label="Search review questions"
                 placeholder="Search review..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -515,6 +596,7 @@ export default function ExamResultDetailPage() {
             {filteredReviewQuestions.map(({ q, index, ans }) => {
               const isSkipped = !ans;
               const isCorrect = Boolean(ans?.isCorrect);
+              const isBookmarked = Boolean(statsMap.get(q.id)?.bookmarked);
 
               return (
                 <div
@@ -538,23 +620,51 @@ export default function ExamResultDetailPage() {
                       <span className="text-xs text-slate-500">{q.sectionTitle}</span>
                     </div>
 
-                    {isSkipped ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">
-                        <MinusCircle className="h-3.5 w-3.5" />
-                        Skipped / Unattempted
-                      </span>
-                    ) : isCorrect ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-700">
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                        Answered Correctly ({ans?.selectedOption})
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-0.5 text-xs font-bold text-rose-700">
-                        <XCircle className="h-3.5 w-3.5" />
-                        Your Choice: {ans?.selectedOption} • Correct: {q.correctOption}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleBookmark(q)}
+                        aria-pressed={isBookmarked}
+                        className={`no-print inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold cursor-pointer ${
+                          isBookmarked
+                            ? 'bg-amber-100 text-amber-800'
+                            : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                        }`}
+                      >
+                        <Bookmark
+                          className={`h-3 w-3 ${isBookmarked ? 'fill-amber-500 text-amber-600' : ''}`}
+                        />
+                        {isBookmarked ? 'Saved' : 'Save'}
+                      </button>
+
+                      {isSkipped ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">
+                          <MinusCircle className="h-3.5 w-3.5" />
+                          Skipped
+                        </span>
+                      ) : isCorrect ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-700">
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                          Correct ({ans?.selectedOption})
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-0.5 text-xs font-bold text-rose-700">
+                          <XCircle className="h-3.5 w-3.5" />
+                          Your Choice: {ans?.selectedOption} • Correct: {q.correctOption}
+                        </span>
+                      )}
+                    </div>
                   </div>
+
+                  {q.contextNote && (
+                    <div className="rounded-xl border border-sky-200 bg-sky-50/80 px-3.5 py-2.5 text-xs text-sky-950 flex items-start gap-2">
+                      <FileText className="h-4 w-4 text-sky-600 shrink-0 mt-0.5" />
+                      <div>
+                        <strong>Shared Scenario Context: </strong>
+                        {q.contextNote}
+                      </div>
+                    </div>
+                  )}
 
                   <p className="text-sm sm:text-base font-bold text-slate-900">{q.question}</p>
 
@@ -610,4 +720,3 @@ export default function ExamResultDetailPage() {
     </div>
   );
 }
-

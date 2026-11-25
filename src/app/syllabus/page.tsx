@@ -1,30 +1,15 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { ArrowRight, BookOpen, Search, Upload } from 'lucide-react';
 import { NEC_ASOE_SYLLABUS } from '@/data/nec-asoe-syllabus';
-import { getAllQuestions } from '@/lib/db';
-import { MCQQuestion } from '@/types/mcq';
+import { useAppData } from '@/components/AppDataProvider';
 
 export default function SyllabusExplorerPage() {
-  const [questions, setQuestions] = useState<MCQQuestion[]>([]);
+  const { summary } = useAppData();
   const [query, setQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
-
-  useEffect(() => {
-    getAllQuestions()
-      .then(setQuestions)
-      .catch(() => {});
-  }, []);
-
-  const sectionCounts = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const q of questions) {
-      map.set(q.sectionId, (map.get(q.sectionId) ?? 0) + 1);
-    }
-    return map;
-  }, [questions]);
 
   const filteredChapters = useMemo(() => {
     const qLower = query.trim().toLowerCase();
@@ -69,6 +54,7 @@ export default function SyllabusExplorerPage() {
             <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
             <input
               type="text"
+              aria-label="Search syllabus topics or codes"
               placeholder="Search topic or code (e.g. OSI, ASoE0104)..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -77,6 +63,7 @@ export default function SyllabusExplorerPage() {
           </div>
 
           <select
+            aria-label="Filter syllabus parts"
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
             className="w-full sm:w-auto rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-medium focus:border-indigo-500 focus:outline-none"
@@ -92,7 +79,7 @@ export default function SyllabusExplorerPage() {
       <div className="space-y-6">
         {filteredChapters.map((ch) => {
           const chCount = ch.sections.reduce(
-            (sum, s) => sum + (sectionCounts.get(s.sectionId) ?? 0),
+            (sum, s) => sum + (summary.sectionCounts[s.sectionId] ?? 0),
             0
           );
 
@@ -117,13 +104,12 @@ export default function SyllabusExplorerPage() {
 
                 <div className="flex items-center gap-2.5">
                   <span
-                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                      chCount > 0
+                    className={`rounded-full px-3 py-1 text-xs font-semibold ${chCount > 0
                         ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
                         : 'bg-slate-100 text-slate-500'
-                    }`}
+                      }`}
                   >
-                    {chCount} Uploaded MCQs
+                    {chCount} MCQs in Bank
                   </span>
                   {chCount > 0 ? (
                     <Link
@@ -147,7 +133,7 @@ export default function SyllabusExplorerPage() {
 
               <div className="grid gap-3 md:grid-cols-2">
                 {ch.sections.map((sec) => {
-                  const sCount = sectionCounts.get(sec.sectionId) ?? 0;
+                  const sCount = summary.sectionCounts[sec.sectionId] ?? 0;
                   return (
                     <div
                       key={sec.sectionId}
@@ -189,4 +175,3 @@ export default function SyllabusExplorerPage() {
     </div>
   );
 }
-

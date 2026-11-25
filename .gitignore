@@ -3,7 +3,8 @@
 /.pnp
 .pnp.*
 /.codebuddy
-
+.env.example
+.env
 # next.js
 /.next/
 /out/

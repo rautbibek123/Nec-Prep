@@ -1,4 +1,4 @@
-# NEC ASoE Excel MCQ Extractor & Interactive Exam Simulator
+# NEC ASoE Exam Prep — 3,180-MCQ Bank, 100-Q Mock Sets & Exam Simulator
 
 A **Next.js (App Router + React 19 + TypeScript + Tailwind CSS)** web application and **Docker container** built for the **Nepal Engineering Council (NEC) Registration Examination — Software Engineering (`ASoE`) Syllabus**.
 
@@ -6,14 +6,19 @@ A **Next.js (App Router + React 19 + TypeScript + Tailwind CSS)** web applicatio
 
 ## Key Features
 
-- **Excel (`.xlsx`) Upload & Multi-Tab Extractor**: Upload multi-sheet NEC workbooks (such as `NEC_ASoE_Ch1_Fundamentals_of_IT_180_MCQs.xlsx` with `Summary` + tabs `1.1`–`1.6`) or custom spreadsheets. Extracts questions, options `A–D`, `Correct` keys, and `Reason / Explanation` automatically.
-- **Complete 10-Chapter / 60-Section NEC `ASoE` Syllabus**: Embedded official syllabus (`ASoE0101` through `AALL1006`) with live question bank coverage tracking.
-- **Chapter-Wise & Section-Wise Question Generator**: Filter by any Chapter (`1`–`10`) or Sub-section (`1.1`–`10.6`), choose question counts (`10`, `20`, `30`, `50`, `100`, `All`), balanced section sampling, randomized order, and optional exam countdown timers.
-- **Strict Single-Choice Permanent Lock**: Once an option (`A`, `B`, `C`, or `D`) is chosen on a question, **it locks permanently and cannot be selected or changed again** (persisted in `IndexedDB` across reloads).
-- **Instant Correct Answer + Valid Reason Reveal**:
-  - Choosing a **wrong option** highlights your pick in **Red**, immediately highlights the **Correct Option in Green**, and displays the **`Reason / Explanation`** so you understand *why*.
-  - Choosing the **correct option** highlights in **Green** and displays the **`Reason / Explanation`** to reinforce learning.
-- **Proper Exam Result & Analytics**: Score, percentage, NEC `50%` Pass/Fail status, pace metrics, Chapter & Section breakdown table, filterable review (`Wrong` / `Correct` / `Skipped`), CSV export, print stylesheet, and one-click **Retry Wrong Questions**.
+- **Pre-Seeded 3,180-MCQ Bank (All 10 Chapters / 60 Sections)**: All 10 official NEC ASoE workbooks (`data/workbooks/*.xlsx`) are compiled at build time into compact JSON (`public/seed/`) and bulk-seeded in milliseconds into a frontend **IndexedDB v2** database (`nec-asoe-mcq-db`) on first visit.
+- **30 Balanced 100-Question / 2-Hour Test Sets (`/sets`)**:
+  - Every set selects **exactly 10 questions per chapter** (`Ch 1–10`) and covers **all 60 syllabus sections** (`1–2` questions each) with **zero repeats inside any set**.
+  - **Core Sets 1–18**: `1,800` completely unique questions with zero global repeats across sets.
+  - **Extended Sets 19–30**: Continues drawing unseen questions from `Ch 2–10` alongside balanced `Ch 1` coverage.
+  - **Dynamic Smart Unseen / Weak-Area 100-Q Sets**: Generates fresh randomized 100-question balanced sets prioritizing unseen or previously missed questions.
+- **Dual Exam Modes**:
+  - **Real NEC Exam Mode**: 2-hour simulation where selections can be changed until submission, and scores + explanations appear at the end.
+  - **Practice Lock Mode**: Strict single-choice permanent lock on first click with instant Red/Green feedback and `Reason / Explanation` reveal.
+- **Google Sign-In + Local Profiles & Portable Backups**:
+  - Optional **Sign in with Google** (via signed `HttpOnly` OAuth2 session cookies) plus multi-user **Local Profiles** and **Export / Restore JSON Backups**.
+- **Custom Excel (`.xlsx`) Extractor (`/upload`)**: Lazy-loads SheetJS (`xlsx`) only when uploading custom workbooks, with paginated spoiler-safe browsing and bookmarking.
+- **Result Analytics & Remediation (`/results`)**: NEC `50%` pass benchmark, chapter & section accuracy breakdowns, CSV export, print stylesheet, and **Retry Wrong Questions**.
 - **Docker Container Ready**: Multi-stage `node:22-alpine` standalone `Dockerfile` + `docker-compose.yml`.
 
 ---
@@ -22,10 +27,25 @@ A **Next.js (App Router + React 19 + TypeScript + Tailwind CSS)** web applicatio
 
 ```bash
 npm install
+npm run build:seed
 npm run dev
 ```
 
 Open **http://localhost:3000** in your browser.
+
+### Optional: Enable Sign in with Google
+
+Copy `.env.example` to `.env.local` and configure your Google OAuth 2.0 Web Client credentials:
+
+```env
+GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+AUTH_SECRET=a-long-random-32-character-secret
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+```
+
+Set the authorized redirect URI in Google Cloud Console to:
+`http://localhost:3000/api/auth/google/callback`
 
 ---
 
@@ -45,22 +65,9 @@ docker compose down
 
 ---
 
-## Project Architecture & Phase Docs
+## Scripts
 
-Detailed architecture and phase specifications are available in [`./docs/README.md`](./docs/README.md).
-
-
-# Nec-Prep 🚀
-
-**Nec-Prep** is a streamlined, full-stack examination preparation platform designed for educators, trainers, and students. By simply uploading an Excel spreadsheet (`.xlsx`) populated with questions, the platform instantly parses the data and boots up a live, interactive exam environment.
-
-## ✨ Key Features
-* **Excel-to-Exam Pipeline:** Drag and drop or upload structured question banks via Excel spreadsheets for instant parsing.
-* **Live Test Interface:** Clean, distraction-free test-taking UI with real-time timer, question navigation, and state tracking.
-* **Automated Evaluation:** Instant scoring, review breakdowns, and performance feedback upon test submission.
-* **Scalable Architecture:** Built for fast query processing, smooth state management, and seamless deployment.
-
-## 🛠️ Tech Stack
-* **Frontend:** React / Next.js, Tailwind CSS
-* **Backend:** Node.js / FastAPI / Express
-* **Database / Parsing:** PostgreSQL / MongoDB, SheetJS (xlsx) parser utilities
+- `npm run build:seed` — Parses `data/workbooks/*.xlsx` into `public/seed/` (`manifest.json`, `questions.json`, `test-sets.json`).
+- `npm run verify:seed` — Verifies 3,180 unique MCQs, 60 sections, scenario context enrichment, and all 30 balanced 100-Q test set invariants.
+- `npm run typecheck` — Runs `tsc --noEmit`.
+- `npm run build` — Builds the standalone Next.js production app.

@@ -1,4 +1,4 @@
-import { parseExcelWorkbook } from '@/lib/excel-parser';
+import { parseExcelWorkbookAsync } from '@/lib/excel-parser';
 import { saveParsedWorkbook } from '@/lib/db';
 import { ParseWorkbookResult } from '@/types/mcq';
 
@@ -11,10 +11,10 @@ export async function loadBundledChapter1Sample(): Promise<ParseWorkbookResult> 
     throw new Error(`Failed to fetch sample Excel workbook (${response.status}).`);
   }
   const arrayBuffer = await response.arrayBuffer();
-  const parsed = parseExcelWorkbook(arrayBuffer, SAMPLE_CH1_FILENAME, {
+  const parsed = await parseExcelWorkbookAsync(arrayBuffer, SAMPLE_CH1_FILENAME, {
     fallbackChapter: 1,
+    origin: 'uploaded',
   });
   await saveParsedWorkbook(parsed.meta, parsed.questions);
   return parsed;
 }
-

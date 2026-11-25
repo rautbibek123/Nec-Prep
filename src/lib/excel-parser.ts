@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx';
+import type * as XLSXType from 'xlsx';
 import {
   MCQQuestion,
   OptionKey,
@@ -7,13 +7,32 @@ import {
 } from '@/types/mcq';
 import { resolveSyllabusSection } from '@/data/nec-asoe-syllabus';
 
-function simpleHash(input: string): string {
+export const FOLLOW_UP_QUESTION_RE =
+  /^(for the same|in the same|using the same)\b|\b(previous question|the above)\b/i;
+
+export function simpleHash(input: string): string {
   let h = 2166136261;
   for (let i = 0; i < input.length; i++) {
     h ^= input.charCodeAt(i);
     h = Math.imul(h, 16777619);
   }
   return (h >>> 0).toString(36);
+}
+
+export function buildQuestionId(
+  sectionId: string,
+  questionText: string,
+  options: Record<OptionKey, string>
+): string {
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+  const composite = [
+    norm(questionText),
+    norm(options.A),
+    norm(options.B),
+    norm(options.C),
+    norm(options.D),
+  ].join('||');
+  return `${sectionId}::${simpleHash(composite)}`;
 }
 
 function normalizeHeader(cell: unknown): string {
@@ -77,7 +96,6 @@ function detectHeaderMapping(rows: unknown[][]): ColumnMapping | null {
           'right option',
         ].includes(h)
       ) {
-        // Make sure we don't match "your answer"
         correctCol = c;
       } else if (
         h.includes('reason') ||
@@ -128,13 +146,11 @@ function normalizeCorrectOption(
     return upper as OptionKey;
   }
 
-  // Handle "Option A", "(B)", "B.", "Ans: C"
   const prefixMatch = upper.match(/^(?:OPTION\s*|OPT\s*|ANS(?:WER)?[:\s]*|\()([ABCD])(?:\)|\.|\b)/);
   if (prefixMatch) {
     return prefixMatch[1] as OptionKey;
   }
 
-  // Handle cell containing the literal option text
   for (const key of OPTION_KEYS) {
     if (options[key].trim().toLowerCase() === cleaned.toLowerCase()) {
       return key;
@@ -144,18 +160,19 @@ function normalizeCorrectOption(
   return null;
 }
 
-/**
- * Extracts MCQs from an Excel (.xlsx / .xls / .csv) ArrayBuffer.
- * Built specifically for NEC ASoE multi-sheet workbooks (Summary + 1.1..1.6)
- * as well as generic single/multi-sheet MCQ spreadsheets.
- */
-export function parseExcelWorkbook(
+function parseWorkbookWithXLSX(
+  XLSX: typeof XLSXType,
   buffer: ArrayBuffer,
   fileName: string,
-  options?: { fallbackChapter?: number; fallbackSection?: string }
+  options?: {
+    fallbackChapter?: number;
+    fallbackSection?: string;
+    origin?: 'seeded' | 'uploaded';
+  }
 ): ParseWorkbookResult {
   const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' });
   const nowIso = new Date().toISOString();
+  const origin = options?.origin ?? 'uploaded';
 
   let workbookTitle = fileName.replace(/\.(xlsx|xls|csv)$/i, '');
   const questions: MCQQuestion[] = [];
@@ -175,7 +192,6 @@ export function parseExcelWorkbook(
     if (rows.length === 0) continue;
 
     const normalizedSheet = sheetName.trim().toLowerCase();
-    // Extract workbook title if this is a Summary / Cover sheet
     if (
       normalizedSheet === 'summary' ||
       normalizedSheet === 'instructions' ||
@@ -197,7 +213,6 @@ export function parseExcelWorkbook(
       continue;
     }
 
-    // Gather banner text above the header row (e.g. Row 1 in NEC workbooks)
     const bannerText = rows
       .slice(0, mapping.headerRowIndex)
       .map((r) => r.map((c) => String(c ?? '').trim()).filter(Boolean).join(' '))
@@ -213,12 +228,12 @@ export function parseExcelWorkbook(
 
     let extractedCount = 0;
     let skippedCount = 0;
+    let lastAnchorStem: string | null = null;
 
     for (let r = mapping.headerRowIndex + 1; r < rows.length; r++) {
       const row = rows[r] ?? [];
       const questionText = String(row[mapping.questionCol] ?? '').trim();
 
-      // Skip empty trailing or note rows
       if (!questionText) continue;
 
       const optMap: Record<OptionKey, string> = {
@@ -275,8 +290,14 @@ export function parseExcelWorkbook(
         rawReason ||
         `Option ${correctOption} ("${optMap[correctOption]}") is the correct answer for this ${resolved.sectionTitle} concept.`;
 
-      const normalizedQuestionKey = questionText.toLowerCase().replace(/\s+/g, ' ');
-      const id = `${resolved.sectionId}::${simpleHash(normalizedQuestionKey)}`;
+      let contextNote: string | undefined;
+      if (FOLLOW_UP_QUESTION_RE.test(questionText) && lastAnchorStem) {
+        contextNote = lastAnchorStem;
+      } else {
+        lastAnchorStem = questionText;
+      }
+
+      const id = buildQuestionId(resolved.sectionId, questionText, optMap);
 
       questions.push({
         id,
@@ -290,6 +311,8 @@ export function parseExcelWorkbook(
         options: optMap,
         correctOption,
         reason,
+        ...(contextNote ? { contextNote } : {}),
+        origin,
         importedAt: nowIso,
       });
       extractedCount++;
@@ -303,7 +326,6 @@ export function parseExcelWorkbook(
     });
   }
 
-  // Deduplicate within the same workbook if identical question appeared twice
   const dedupedMap = new Map<string, MCQQuestion>();
   for (const q of questions) {
     dedupedMap.set(q.id, q);
@@ -326,9 +348,27 @@ export function parseExcelWorkbook(
       totalQuestions: uniqueQuestions.length,
       chaptersCovered,
       sectionsCovered,
+      origin,
       sheetSummaries,
       warnings,
     },
     questions: uniqueQuestions,
   };
+}
+
+/**
+ * Lazy-loading Excel parser so SheetJS (~350KB) is only downloaded when the user
+ * actually visits /upload or parses a spreadsheet in the browser.
+ */
+export async function parseExcelWorkbookAsync(
+  buffer: ArrayBuffer,
+  fileName: string,
+  options?: {
+    fallbackChapter?: number;
+    fallbackSection?: string;
+    origin?: 'seeded' | 'uploaded';
+  }
+): Promise<ParseWorkbookResult> {
+  const XLSX = await import('xlsx');
+  return parseWorkbookWithXLSX(XLSX, buffer, fileName, options);
 }

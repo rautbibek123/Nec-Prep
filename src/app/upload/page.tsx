@@ -1,43 +1,54 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   AlertTriangle,
   ArrowRight,
+  Bookmark,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Download,
   Eye,
   EyeOff,
   FileSpreadsheet,
+  FileText,
+  RefreshCw,
   Search,
-  Sparkles,
   Trash2,
   UploadCloud,
 } from 'lucide-react';
 import { NEC_ASOE_SYLLABUS } from '@/data/nec-asoe-syllabus';
+import { useAuth } from '@/components/AuthProvider';
+import { useAppData } from '@/components/AppDataProvider';
 import {
-  clearQuestionBank,
+  clearUploadedWorkbooks,
   getAllQuestions,
   getAllWorkbooks,
+  getQuestionsByChapter,
+  getUserStatsMap,
   removeWorkbookByName,
   saveParsedWorkbook,
+  toggleQuestionBookmark,
 } from '@/lib/db';
-import { parseExcelWorkbook } from '@/lib/excel-parser';
-import {
-  loadBundledChapter1Sample,
-  SAMPLE_CH1_FILENAME,
-  SAMPLE_CH1_URL,
-} from '@/lib/sample-loader';
+import { parseExcelWorkbookAsync } from '@/lib/excel-parser';
+import { SAMPLE_CH1_FILENAME, SAMPLE_CH1_URL } from '@/lib/sample-loader';
 import {
   MCQQuestion,
   OPTION_KEYS,
   ParseWorkbookResult,
+  QuestionStatRecord,
   UploadedWorkbookMeta,
 } from '@/types/mcq';
 
+const PAGE_SIZE = 25;
+
 export default function UploadExcelPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const { user } = useAuth();
+  const { summary, reseedDatabase, refreshSummary } = useAppData();
+
   const [dragging, setDragging] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [fallbackChapter, setFallbackChapter] = useState<number>(1);
@@ -46,22 +57,52 @@ export default function UploadExcelPage() {
 
   const [workbooks, setWorkbooks] = useState<UploadedWorkbookMeta[]>([]);
   const [questions, setQuestions] = useState<MCQQuestion[]>([]);
+  const [statsMap, setStatsMap] = useState<Map<string, QuestionStatRecord>>(new Map());
+  const [loadingQuestions, setLoadingQuestions] = useState(false);
 
-  // Question Bank Browser filters
-  const [filterChapter, setFilterChapter] = useState<string>('all');
+  // Filters + debounced search + pagination
+  const [filterChapter, setFilterChapter] = useState<string>('1');
   const [filterSection, setFilterSection] = useState<string>('all');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [page, setPage] = useState(1);
   const [revealedIds, setRevealedIds] = useState<Record<string, boolean>>({});
 
-  const refreshBank = async () => {
-    const [wb, qs] = await Promise.all([getAllWorkbooks(), getAllQuestions()]);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedQuery(searchInput.trim().toLowerCase());
+      setPage(1);
+    }, 200);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  const loadWorkbooksAndStats = useCallback(async () => {
+    const [wb, st] = await Promise.all([getAllWorkbooks(), getUserStatsMap(user.id)]);
     setWorkbooks(wb);
-    setQuestions(qs);
-  };
+    setStatsMap(st);
+  }, [user.id]);
+
+  // Load only the selected chapter via IndexedDB index (fast!), or all if 'all'
+  const loadQuestionsForFilter = useCallback(async (chFilter: string) => {
+    setLoadingQuestions(true);
+    try {
+      const qs =
+        chFilter === 'all'
+          ? await getAllQuestions()
+          : await getQuestionsByChapter(Number(chFilter));
+      setQuestions(qs);
+    } finally {
+      setLoadingQuestions(false);
+    }
+  }, []);
 
   useEffect(() => {
-    refreshBank();
-  }, []);
+    loadWorkbooksAndStats();
+  }, [loadWorkbooksAndStats]);
+
+  useEffect(() => {
+    loadQuestionsForFilter(filterChapter);
+  }, [filterChapter, loadQuestionsForFilter, summary.totalQuestions]);
 
   const processFiles = async (fileList: FileList | File[]) => {
     const files = Array.from(fileList);
@@ -79,8 +120,9 @@ export default function UploadExcelPage() {
           );
         }
         const buffer = await file.arrayBuffer();
-        const result = parseExcelWorkbook(buffer, file.name, {
+        const result = await parseExcelWorkbookAsync(buffer, file.name, {
           fallbackChapter,
+          origin: 'uploaded',
         });
         if (result.questions.length === 0) {
           throw new Error(
@@ -91,7 +133,11 @@ export default function UploadExcelPage() {
         parsedBatch.push(result);
       }
       setRecentResults(parsedBatch);
-      await refreshBank();
+      await Promise.all([
+        refreshSummary(),
+        loadWorkbooksAndStats(),
+        loadQuestionsForFilter(filterChapter),
+      ]);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Error parsing Excel file.');
     } finally {
@@ -102,51 +148,94 @@ export default function UploadExcelPage() {
     }
   };
 
-  const handleLoadSample = async () => {
+  const handleRemoveWorkbook = async (fileName: string) => {
+    await removeWorkbookByName(fileName);
+    await Promise.all([
+      refreshSummary(),
+      loadWorkbooksAndStats(),
+      loadQuestionsForFilter(filterChapter),
+    ]);
+  };
+
+  const handleClearCustom = async () => {
+    if (!window.confirm('Remove all custom uploaded workbooks? Pre-seeded NEC MCQs will stay intact.')) {
+      return;
+    }
+    await clearUploadedWorkbooks();
+    setRecentResults([]);
+    await Promise.all([
+      refreshSummary(),
+      loadWorkbooksAndStats(),
+      loadQuestionsForFilter(filterChapter),
+    ]);
+  };
+
+  const handleReseed = async () => {
     setProcessing(true);
     setErrorMsg(null);
     try {
-      const res = await loadBundledChapter1Sample();
-      setRecentResults([res]);
-      await refreshBank();
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Failed to load sample file.');
+      await reseedDatabase();
+      await Promise.all([loadWorkbooksAndStats(), loadQuestionsForFilter(filterChapter)]);
     } finally {
       setProcessing(false);
     }
   };
 
-  const handleRemoveWorkbook = async (fileName: string) => {
-    await removeWorkbookByName(fileName);
-    await refreshBank();
+  const handleToggleBookmark = async (q: MCQQuestion) => {
+    const next = await toggleQuestionBookmark(user.id, q);
+    setStatsMap((prev) => {
+      const copy = new Map(prev);
+      const old = copy.get(q.id);
+      copy.set(
+        q.id,
+        old
+          ? { ...old, bookmarked: next }
+          : {
+              key: `${user.id}::${q.id}`,
+              userId: user.id,
+              questionId: q.id,
+              sectionId: q.sectionId,
+              chapterNumber: q.chapterNumber,
+              attempts: 0,
+              correctCount: 0,
+              wrongCount: 0,
+              lastIsCorrect: null,
+              lastAttemptedAt: null,
+              bookmarked: next,
+            }
+      );
+      return copy;
+    });
   };
 
-  const handleClearAll = async () => {
-    if (!window.confirm('Remove all uploaded workbooks and questions from your local bank?')) {
-      return;
-    }
-    await clearQuestionBank();
-    setRecentResults([]);
-    await refreshBank();
-  };
+  const seededWorkbooks = useMemo(
+    () => workbooks.filter((w) => w.origin === 'seeded'),
+    [workbooks]
+  );
+  const customWorkbooks = useMemo(
+    () => workbooks.filter((w) => w.origin !== 'seeded'),
+    [workbooks]
+  );
 
   const availableSections = useMemo(() => {
     const set = new Set<string>();
     for (const q of questions) {
-      if (filterChapter === 'all' || String(q.chapterNumber) === filterChapter) {
-        set.add(q.sectionId);
-      }
+      set.add(q.sectionId);
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-  }, [questions, filterChapter]);
+  }, [questions]);
 
   const filteredQuestions = useMemo(() => {
-    const qLower = searchQuery.trim().toLowerCase();
     return questions
       .filter((q) => {
-        if (filterChapter !== 'all' && String(q.chapterNumber) !== filterChapter) return false;
         if (filterSection !== 'all' && q.sectionId !== filterSection) return false;
-        if (qLower && !q.question.toLowerCase().includes(qLower)) return false;
+        if (
+          debouncedQuery &&
+          !q.question.toLowerCase().includes(debouncedQuery) &&
+          !q.reason.toLowerCase().includes(debouncedQuery)
+        ) {
+          return false;
+        }
         return true;
       })
       .sort((a, b) => {
@@ -154,7 +243,14 @@ export default function UploadExcelPage() {
         if (sCmp !== 0) return sCmp;
         return a.originalNo - b.originalNo;
       });
-  }, [questions, filterChapter, filterSection, searchQuery]);
+  }, [questions, filterSection, debouncedQuery]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredQuestions.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const paginatedQuestions = useMemo(() => {
+    const start = (safePage - 1) * PAGE_SIZE;
+    return filteredQuestions.slice(start, start + PAGE_SIZE);
+  }, [filteredQuestions, safePage]);
 
   const toggleReveal = (id: string) => {
     setRevealedIds((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -166,26 +262,34 @@ export default function UploadExcelPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-            Excel MCQ Extractor &amp; Question Bank
+            Question Bank &amp; Excel MCQ Extractor
           </h1>
           <p className="text-sm text-slate-600">
-            Upload NEC ASoE chapter Excel files (<code className="font-mono text-xs">.xlsx</code>).
-            Multi-tab sheets (<code className="font-mono text-xs">1.1</code>–
-            <code className="font-mono text-xs">10.6</code>),{' '}
-            <code className="font-mono text-xs">Correct</code> keys, and{' '}
-            <code className="font-mono text-xs">Reason / Explanation</code> columns are mapped
-            automatically.
+            Pre-loaded with <strong>{summary.seededQuestions.toLocaleString()}</strong> official
+            NEC ASoE MCQs across all 10 chapters. Upload custom{' '}
+            <code className="font-mono text-xs">.xlsx</code> workbooks anytime to expand your bank.
           </p>
         </div>
-        {questions.length > 0 && (
-          <Link
-            href="/generator"
-            className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-xs transition hover:bg-indigo-700"
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={handleReseed}
+            disabled={processing}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
           >
-            Generate Exam ({questions.length} MCQs)
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-        )}
+            <RefreshCw className={`h-3.5 w-3.5 ${processing ? 'animate-spin' : ''}`} />
+            Re-sync Pre-Seeded Bank
+          </button>
+          {summary.totalQuestions > 0 && (
+            <Link
+              href="/sets"
+              className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-xs transition hover:bg-indigo-700"
+            >
+              100-Q Mock Sets
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          )}
+        </div>
       </div>
 
       {/* Upload Dropzone */}
@@ -227,12 +331,12 @@ export default function UploadExcelPage() {
             <h2 className="mt-4 text-base font-bold text-slate-900">
               {processing
                 ? 'Extracting Questions & Explanations...'
-                : 'Click or Drag & Drop Excel (.xlsx) Workbooks Here'}
+                : 'Upload Custom Excel (.xlsx) Workbooks'}
             </h2>
             <p className="mt-1 max-w-md text-xs text-slate-500">
-              Supports multi-tab NEC workbooks (e.g.,{' '}
-              <span className="font-mono">{SAMPLE_CH1_FILENAME}</span> with Summary + tabs 1.1 to
-              1.6) as well as custom single-sheet MCQ Excel files.
+              Supports multi-tab NEC workbooks (tabs <span className="font-mono">1.1</span>–
+              <span className="font-mono">10.6</span>) and single-sheet MCQ spreadsheets. SheetJS
+              loads on demand only when uploading.
             </p>
             <div
               className="mt-5 flex flex-wrap items-center justify-center gap-3"
@@ -247,22 +351,13 @@ export default function UploadExcelPage() {
                 <FileSpreadsheet className="h-4 w-4" />
                 Select .xlsx File(s)
               </button>
-              <button
-                type="button"
-                onClick={handleLoadSample}
-                disabled={processing}
-                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-xs transition hover:bg-emerald-700 disabled:opacity-60 cursor-pointer"
-              >
-                <Sparkles className="h-4 w-4" />
-                Load Bundled Ch 1 (180 MCQs)
-              </button>
               <a
                 href={SAMPLE_CH1_URL}
                 download={SAMPLE_CH1_FILENAME}
                 className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
               >
                 <Download className="h-3.5 w-3.5" />
-                Download Sample .xlsx
+                Download Sample Template .xlsx
               </a>
             </div>
           </div>
@@ -275,8 +370,7 @@ export default function UploadExcelPage() {
             Sheets named <code className="rounded bg-slate-100 px-1">1.1</code>–
             <code className="rounded bg-slate-100 px-1">10.6</code> or containing syllabus codes (
             <code className="rounded bg-slate-100 px-1">ASoE0101</code>–
-            <code className="rounded bg-slate-100 px-1">AALL1006</code>) map automatically. For
-            custom sheets without section names, assign a fallback chapter below:
+            <code className="rounded bg-slate-100 px-1">AALL1006</code>) map automatically.
           </p>
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -322,7 +416,7 @@ export default function UploadExcelPage() {
               <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
               <div>
                 <h3 className="text-sm font-bold text-slate-900">
-                  Successfully Extracted {res.meta.totalQuestions} MCQs — {res.meta.fileName}
+                  Extracted {res.meta.totalQuestions} MCQs — {res.meta.fileName}
                 </h3>
                 <p className="text-xs text-slate-600">{res.meta.workbookTitle}</p>
               </div>
@@ -331,68 +425,37 @@ export default function UploadExcelPage() {
               href={`/generator?chapter=${res.meta.chaptersCovered[0] ?? 1}`}
               className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700"
             >
-              Start Exam from This Workbook
+              Practice This Workbook
               <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </div>
-
-          <div className="grid gap-2 sm:grid-cols-3 md:grid-cols-6">
-            {res.meta.sheetSummaries.map((sh) => (
-              <div
-                key={sh.sheetName}
-                className="rounded-xl border border-emerald-200/80 bg-white p-3 text-xs"
-              >
-                <div className="flex items-center justify-between font-bold text-slate-800">
-                  <span>Tab {sh.sheetName}</span>
-                  <span className="text-emerald-700">{sh.extractedCount} Qs</span>
-                </div>
-                <div className="mt-0.5 text-[11px] text-slate-500">
-                  Section {sh.sectionId}
-                  {sh.skippedCount > 0 ? ` (${sh.skippedCount} skipped)` : ''}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {res.meta.warnings.length > 0 && (
-            <details className="text-xs text-amber-800">
-              <summary className="cursor-pointer font-semibold">
-                {res.meta.warnings.length} import notice(s)
-              </summary>
-              <ul className="mt-1.5 list-disc pl-5 space-y-0.5">
-                {res.meta.warnings.slice(0, 10).map((w, idx) => (
-                  <li key={idx}>{w}</li>
-                ))}
-              </ul>
-            </details>
-          )}
         </section>
       ))}
 
-      {/* Uploaded Workbooks List */}
-      {workbooks.length > 0 && (
+      {/* Custom Uploaded Workbooks (if any) */}
+      {customWorkbooks.length > 0 && (
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-base font-bold text-slate-900">
-                Uploaded Excel Workbooks ({workbooks.length})
+                Custom Uploaded Workbooks ({customWorkbooks.length})
               </h2>
               <p className="text-xs text-slate-500">
-                Stored persistently in your browser database — re-uploading updates questions
-                without duplicates.
+                Added on top of the pre-seeded 3,180-MCQ bank.
               </p>
             </div>
             <button
-              onClick={handleClearAll}
+              type="button"
+              onClick={handleClearCustom}
               className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 cursor-pointer"
             >
               <Trash2 className="h-3.5 w-3.5" />
-              Clear All
+              Clear Custom
             </button>
           </div>
 
           <div className="divide-y divide-slate-100">
-            {workbooks.map((wb) => (
+            {customWorkbooks.map((wb) => (
               <div
                 key={wb.fileName}
                 className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
@@ -407,91 +470,130 @@ export default function UploadExcelPage() {
                   </div>
                   <p className="text-xs text-slate-500">
                     Chapters: {wb.chaptersCovered.join(', ')} • Sections:{' '}
-                    {wb.sectionsCovered.join(', ')} • Uploaded{' '}
-                    {new Date(wb.uploadedAt).toLocaleString()}
+                    {wb.sectionsCovered.join(', ')}
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Link
-                    href={`/generator?chapter=${wb.chaptersCovered[0] ?? 1}`}
-                    className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200"
-                  >
-                    Practice
-                  </Link>
-                  <button
-                    onClick={() => handleRemoveWorkbook(wb.fileName)}
-                    className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 cursor-pointer"
-                    title="Remove workbook"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveWorkbook(wb.fileName)}
+                  className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 cursor-pointer"
+                  title="Remove custom workbook"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
               </div>
             ))}
           </div>
         </section>
       )}
 
-      {/* Spoiler-Safe Question Bank Explorer */}
-      {questions.length > 0 && (
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="text-base font-bold text-slate-900">
-                Extracted Question Bank Preview ({filteredQuestions.length} of {questions.length})
-              </h2>
-              <p className="text-xs text-slate-500">
-                Correct options &amp; explanations are hidden by default so you don&apos;t spoil
-                upcoming exams.
-              </p>
-            </div>
-
-            <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 w-full md:w-auto">
-              <div className="relative flex-1 sm:flex-initial">
-                <Search className="pointer-events-none absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search questions..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full sm:w-52 rounded-lg border border-slate-300 py-1.5 pl-8 pr-3 text-xs focus:border-indigo-500 focus:outline-none"
-                />
+      {/* Pre-Seeded Workbooks Summary */}
+      {seededWorkbooks.length > 0 && (
+        <details className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
+          <summary className="cursor-pointer text-sm font-bold text-slate-900 flex items-center justify-between">
+            <span>
+              Pre-Seeded NEC ASoE Workbooks ({seededWorkbooks.length} chapters •{' '}
+              {summary.seededQuestions.toLocaleString()} MCQs)
+            </span>
+            <span className="text-xs font-medium text-indigo-600">View list</span>
+          </summary>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            {seededWorkbooks.map((wb) => (
+              <div
+                key={wb.fileName}
+                className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-3.5 py-2.5 text-xs"
+              >
+                <div className="min-w-0 pr-2">
+                  <div className="truncate font-bold text-slate-800">{wb.fileName}</div>
+                  <div className="text-[11px] text-slate-500">
+                    Sections {wb.sectionsCovered.join(', ')}
+                  </div>
+                </div>
+                <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-0.5 font-bold text-emerald-700">
+                  {wb.totalQuestions}
+                </span>
               </div>
+            ))}
+          </div>
+        </details>
+      )}
 
-              <select
-                value={filterChapter}
-                onChange={(e) => {
-                  setFilterChapter(e.target.value);
-                  setFilterSection('all');
-                }}
-                className="w-full sm:w-auto rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-medium focus:border-indigo-500 focus:outline-none"
-              >
-                <option value="all">All Chapters</option>
-                {NEC_ASOE_SYLLABUS.map((c) => (
-                  <option key={c.chapterNumber} value={String(c.chapterNumber)}>
-                    Chapter {c.chapterNumber} ({c.chapterCode})
-                  </option>
-                ))}
-              </select>
-
-              <select
-                value={filterSection}
-                onChange={(e) => setFilterSection(e.target.value)}
-                className="w-full sm:w-auto rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-medium focus:border-indigo-500 focus:outline-none"
-              >
-                <option value="all">All Sections</option>
-                {availableSections.map((sec) => (
-                  <option key={sec} value={sec}>
-                    Section {sec}
-                  </option>
-                ))}
-              </select>
-            </div>
+      {/* Spoiler-Safe Paginated Question Bank Explorer */}
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-base font-bold text-slate-900">
+              Question Bank Explorer ({filteredQuestions.length} matching
+              {filterChapter !== 'all' ? ` in Chapter ${filterChapter}` : ''})
+            </h2>
+            <p className="text-xs text-slate-500">
+              Correct options &amp; explanations stay hidden until you click Peek Key.
+            </p>
           </div>
 
+          <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 w-full md:w-auto">
+            <div className="relative flex-1 sm:flex-initial">
+              <Search className="pointer-events-none absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+              <input
+                type="text"
+                aria-label="Search questions and explanations"
+                placeholder="Search questions..."
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                className="w-full sm:w-52 rounded-lg border border-slate-300 py-1.5 pl-8 pr-3 text-xs focus:border-indigo-500 focus:outline-none"
+              />
+            </div>
+
+            <select
+              aria-label="Filter by chapter"
+              value={filterChapter}
+              onChange={(e) => {
+                setFilterChapter(e.target.value);
+                setFilterSection('all');
+                setPage(1);
+              }}
+              className="w-full sm:w-auto rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-medium focus:border-indigo-500 focus:outline-none"
+            >
+              <option value="all">All Chapters ({summary.totalQuestions})</option>
+              {NEC_ASOE_SYLLABUS.map((c) => (
+                <option key={c.chapterNumber} value={String(c.chapterNumber)}>
+                  Ch {c.chapterNumber} ({summary.chapterCounts[c.chapterNumber] ?? 0})
+                </option>
+              ))}
+            </select>
+
+            <select
+              aria-label="Filter by section"
+              value={filterSection}
+              onChange={(e) => {
+                setFilterSection(e.target.value);
+                setPage(1);
+              }}
+              className="w-full sm:w-auto rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-medium focus:border-indigo-500 focus:outline-none"
+            >
+              <option value="all">All Sections</option>
+              {availableSections.map((sec) => (
+                <option key={sec} value={sec}>
+                  Section {sec}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {loadingQuestions ? (
+          <div className="py-10 text-center text-xs text-slate-500">
+            Loading questions from IndexedDB...
+          </div>
+        ) : paginatedQuestions.length === 0 ? (
+          <div className="py-10 text-center text-xs text-slate-500">
+            No questions match the current filter.
+          </div>
+        ) : (
           <div className="space-y-3">
-            {filteredQuestions.slice(0, 40).map((q) => {
+            {paginatedQuestions.map((q) => {
               const revealed = !!revealedIds[q.id];
+              const isBookmarked = Boolean(statsMap.get(q.id)?.bookmarked);
               return (
                 <div
                   key={q.id}
@@ -506,22 +608,46 @@ export default function UploadExcelPage() {
                         <span className="text-xs text-slate-400">#{q.originalNo}</span>
                         <span className="text-xs text-slate-500">{q.sectionTitle}</span>
                       </div>
+                      {q.contextNote && (
+                        <div className="mt-1 rounded-lg border border-sky-200 bg-sky-50 px-2.5 py-1.5 text-[11px] text-sky-900 flex items-start gap-1.5">
+                          <FileText className="h-3.5 w-3.5 shrink-0 text-sky-600 mt-0.5" />
+                          <span>
+                            <strong>Context:</strong> {q.contextNote}
+                          </span>
+                        </div>
+                      )}
                       <p className="text-sm font-semibold text-slate-900">{q.question}</p>
                     </div>
-                    <button
-                      onClick={() => toggleReveal(q.id)}
-                      className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 cursor-pointer"
-                    >
-                      {revealed ? (
-                        <>
-                          <EyeOff className="h-3.5 w-3.5" /> Hide Answer
-                        </>
-                      ) : (
-                        <>
-                          <Eye className="h-3.5 w-3.5" /> Peek Key
-                        </>
-                      )}
-                    </button>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleBookmark(q)}
+                        aria-pressed={isBookmarked}
+                        title="Bookmark question"
+                        className={`rounded-lg border p-1.5 cursor-pointer ${
+                          isBookmarked
+                            ? 'border-amber-300 bg-amber-50 text-amber-600'
+                            : 'border-slate-200 text-slate-400 hover:bg-slate-50'
+                        }`}
+                      >
+                        <Bookmark className={`h-3.5 w-3.5 ${isBookmarked ? 'fill-amber-500' : ''}`} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleReveal(q.id)}
+                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 cursor-pointer"
+                      >
+                        {revealed ? (
+                          <>
+                            <EyeOff className="h-3.5 w-3.5" /> Hide
+                          </>
+                        ) : (
+                          <>
+                            <Eye className="h-3.5 w-3.5" /> Peek Key
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
 
                   <div className="grid gap-2 sm:grid-cols-2">
@@ -553,16 +679,38 @@ export default function UploadExcelPage() {
               );
             })}
 
-            {filteredQuestions.length > 40 && (
-              <p className="text-center text-xs text-slate-500 pt-2">
-                Showing first 40 of {filteredQuestions.length} matching questions. Use filters or
-                launch an exam to practice all questions.
-              </p>
+            {/* Pagination Bar */}
+            {totalPages > 1 && (
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-4 text-xs">
+                <span className="text-slate-500">
+                  Page <strong>{safePage}</strong> of <strong>{totalPages}</strong> (
+                  {filteredQuestions.length} questions)
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={safePage <= 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                    Prev
+                  </button>
+                  <button
+                    type="button"
+                    disabled={safePage >= totalPages}
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+                  >
+                    Next
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
             )}
           </div>
-        </section>
-      )}
+        )}
+      </section>
     </div>
   );
 }
-

@@ -1,0 +1,582 @@
+{
+  "version": "2.1.0-3180-50sets",
+  "generatedAt": "2026-11-25T04:49:56.578Z",
+  "totalQuestions": 3180,
+  "totalSets": 50,
+  "mockSetsCount": 30,
+  "practiceSetsCount": 20,
+  "chaptersCount": 10,
+  "sectionsCount": 60,
+  "workbooks": [
+    {
+      "fileName": "NEC_ASoE_Ch1_Fundamentals_of_IT_180_MCQs.xlsx",
+      "workbookTitle": "NEC Licence Exam - Software Engineering (ASoE) - Chapter 1: Fundamentals of IT",
+      "uploadedAt": "2026-11-25T04:49:56.307Z",
+      "totalQuestions": 180,
+      "chaptersCovered": [
+        1
+      ],
+      "sectionsCovered": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6"
+      ],
+      "origin": "seeded",
+      "sheetSummaries": [
+        {
+          "sheetName": "1.1",
+          "sectionId": "1.1",
+          "extractedCount": 30,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "1.2",
+          "sectionId": "1.2",
+          "extractedCount": 30,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "1.3",
+          "sectionId": "1.3",
+          "extractedCount": 30,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "1.4",
+          "sectionId": "1.4",
+          "extractedCount": 30,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "1.5",
+          "sectionId": "1.5",
+          "extractedCount": 30,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "1.6",
+          "sectionId": "1.6",
+          "extractedCount": 30,
+          "skippedCount": 0
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "fileName": "NEC_ASoE_Ch2_SE_and_OOAD_300_MCQs.xlsx",
+      "workbookTitle": "NEC Licence Exam - Software Engineering (ASoE) - Chapter 2: Software Engineering and OOAD",
+      "uploadedAt": "2026-11-25T04:49:56.307Z",
+      "totalQuestions": 300,
+      "chaptersCovered": [
+        2
+      ],
+      "sectionsCovered": [
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6"
+      ],
+      "origin": "seeded",
+      "sheetSummaries": [
+        {
+          "sheetName": "2.1",
+          "sectionId": "2.1",
+          "extractedCount": 50,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "2.2",
+          "sectionId": "2.2",
+          "extractedCount": 50,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "2.3",
+          "sectionId": "2.3",
+          "extractedCount": 50,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "2.4",
+          "sectionId": "2.4",
+          "extractedCount": 50,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "2.5",
+          "sectionId": "2.5",
+          "extractedCount": 50,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "2.6",
+          "sectionId": "2.6",
+          "extractedCount": 50,
+          "skippedCount": 0
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "fileName": "NEC_ASoE_Ch3_Programming_Languages_300_MCQs.xlsx",
+      "workbookTitle": "NEC Licence Exam - Software Engineering (ASoE) - Chapter 3: Programming Language and Its Applications",
+      "uploadedAt": "2026-11-25T04:49:56.307Z",
+      "totalQuestions": 300,
+      "chaptersCovered": [
+        3
+      ],
+      "sectionsCovered": [
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4",
+        "3.5",
+        "3.6"
+      ],
+      "origin": "seeded",
+      "sheetSummaries": [
+        {
+          "sheetName": "3.1",
+          "sectionId": "3.1",
+          "extractedCount": 50,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "3.2",
+          "sectionId": "3.2",
+          "extractedCount": 50,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "3.3",
+          "sectionId": "3.3",
+          "extractedCount": 50,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "3.4",
+          "sectionId": "3.4",
+          "extractedCount": 50,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "3.5",
+          "sectionId": "3.5",
+          "extractedCount": 50,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "3.6",
+          "sectionId": "3.6",
+          "extractedCount": 50,
+          "skippedCount": 0
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "fileName": "NEC_ASoE_Ch4_DSA_DBMS_OS_480_MCQs.xlsx",
+      "workbookTitle": "NEC Licence Exam - Software Engineering (ASoE) - Chapter 4: Data Structures, Algorithms, Database and Operating System",
+      "uploadedAt": "2026-11-25T04:49:56.307Z",
+      "totalQuestions": 480,
+      "chaptersCovered": [
+        4
+      ],
+      "sectionsCovered": [
+        "4.1",
+        "4.2",
+        "4.3",
+        "4.4",
+        "4.5",
+        "4.6"
+      ],
+      "origin": "seeded",
+      "sheetSummaries": [
+        {
+          "sheetName": "4.1",
+          "sectionId": "4.1",
+          "extractedCount": 80,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "4.2",
+          "sectionId": "4.2",
+          "extractedCount": 80,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "4.3",
+          "sectionId": "4.3",
+          "extractedCount": 80,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "4.4",
+          "sectionId": "4.4",
+          "extractedCount": 80,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "4.5",
+          "sectionId": "4.5",
+          "extractedCount": 80,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "4.6",
+          "sectionId": "4.6",
+          "extractedCount": 80,
+          "skippedCount": 0
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "fileName": "NEC_ASoE_Ch5_Microprocessor_COA_300_MCQs.xlsx",
+      "workbookTitle": "NEC Licence Exam - Software Engineering (ASoE) - Chapter 5: Microprocessor, Computer Organization and Architecture",
+      "uploadedAt": "2026-11-25T04:49:56.307Z",
+      "totalQuestions": 300,
+      "chaptersCovered": [
+        5
+      ],
+      "sectionsCovered": [
+        "5.1",
+        "5.2",
+        "5.3",
+        "5.4",
+        "5.5",
+        "5.6"
+      ],
+      "origin": "seeded",
+      "sheetSummaries": [
+        {
+          "sheetName": "5.1",
+          "sectionId": "5.1",
+          "extractedCount": 50,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "5.2",
+          "sectionId": "5.2",
+          "extractedCount": 50,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "5.3",
+          "sectionId": "5.3",
+          "extractedCount": 50,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "5.4",
+          "sectionId": "5.4",
+          "extractedCount": 50,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "5.5",
+          "sectionId": "5.5",
+          "extractedCount": 50,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "5.6",
+          "sectionId": "5.6",
+          "extractedCount": 50,
+          "skippedCount": 0
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "fileName": "NEC_ASoE_Ch6_Algorithms_SysNetProg_300_MCQs.xlsx",
+      "workbookTitle": "NEC Licence Exam - Software Engineering (ASoE) - Chapter 6: Algorithm Analysis and Design, System and Network Programming",
+      "uploadedAt": "2026-11-25T04:49:56.307Z",
+      "totalQuestions": 300,
+      "chaptersCovered": [
+        6
+      ],
+      "sectionsCovered": [
+        "6.1",
+        "6.2",
+        "6.3",
+        "6.4",
+        "6.5",
+        "6.6"
+      ],
+      "origin": "seeded",
+      "sheetSummaries": [
+        {
+          "sheetName": "6.1",
+          "sectionId": "6.1",
+          "extractedCount": 50,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "6.2",
+          "sectionId": "6.2",
+          "extractedCount": 50,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "6.3",
+          "sectionId": "6.3",
+          "extractedCount": 50,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "6.4",
+          "sectionId": "6.4",
+          "extractedCount": 50,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "6.5",
+          "sectionId": "6.5",
+          "extractedCount": 50,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "6.6",
+          "sectionId": "6.6",
+          "extractedCount": 50,
+          "skippedCount": 0
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "fileName": "NEC_ASoE_Ch7_AI_NeuralNetworks_300_MCQs.xlsx",
+      "workbookTitle": "NEC Licence Exam - Software Engineering (ASoE) - Chapter 7: Artificial Intelligence and Neural Networks",
+      "uploadedAt": "2026-11-25T04:49:56.307Z",
+      "totalQuestions": 300,
+      "chaptersCovered": [
+        7
+      ],
+      "sectionsCovered": [
+        "7.1",
+        "7.2",
+        "7.3",
+        "7.4",
+        "7.5",
+        "7.6"
+      ],
+      "origin": "seeded",
+      "sheetSummaries": [
+        {
+          "sheetName": "7.1",
+          "sectionId": "7.1",
+          "extractedCount": 50,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "7.2",
+          "sectionId": "7.2",
+          "extractedCount": 50,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "7.3",
+          "sectionId": "7.3",
+          "extractedCount": 50,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "7.4",
+          "sectionId": "7.4",
+          "extractedCount": 50,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "7.5",
+          "sectionId": "7.5",
+          "extractedCount": 50,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "7.6",
+          "sectionId": "7.6",
+          "extractedCount": 50,
+          "skippedCount": 0
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "fileName": "NEC_ASoE_Ch8_Java_WebTech_360_MCQs.xlsx",
+      "workbookTitle": "NEC Licence Exam - Software Engineering (ASoE) - Chapter 8: Java Programming and Web Technology",
+      "uploadedAt": "2026-11-25T04:49:56.307Z",
+      "totalQuestions": 360,
+      "chaptersCovered": [
+        8
+      ],
+      "sectionsCovered": [
+        "8.1",
+        "8.2",
+        "8.3",
+        "8.4",
+        "8.5",
+        "8.6"
+      ],
+      "origin": "seeded",
+      "sheetSummaries": [
+        {
+          "sheetName": "8.1",
+          "sectionId": "8.1",
+          "extractedCount": 60,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "8.2",
+          "sectionId": "8.2",
+          "extractedCount": 60,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "8.3",
+          "sectionId": "8.3",
+          "extractedCount": 60,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "8.4",
+          "sectionId": "8.4",
+          "extractedCount": 60,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "8.5",
+          "sectionId": "8.5",
+          "extractedCount": 60,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "8.6",
+          "sectionId": "8.6",
+          "extractedCount": 60,
+          "skippedCount": 0
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "fileName": "NEC_ASoE_Ch9_RTS_Distributed_Cloud_300_MCQs.xlsx",
+      "workbookTitle": "NEC Licence Exam - Software Engineering (ASoE) - Chapter 9: Real-Time, Distributed Systems and Cloud Computing",
+      "uploadedAt": "2026-11-25T04:49:56.307Z",
+      "totalQuestions": 300,
+      "chaptersCovered": [
+        9
+      ],
+      "sectionsCovered": [
+        "9.1",
+        "9.2",
+        "9.3",
+        "9.4",
+        "9.5",
+        "9.6"
+      ],
+      "origin": "seeded",
+      "sheetSummaries": [
+        {
+          "sheetName": "9.1",
+          "sectionId": "9.1",
+          "extractedCount": 50,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "9.2",
+          "sectionId": "9.2",
+          "extractedCount": 50,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "9.3",
+          "sectionId": "9.3",
+          "extractedCount": 50,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "9.4",
+          "sectionId": "9.4",
+          "extractedCount": 50,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "9.5",
+          "sectionId": "9.5",
+          "extractedCount": 50,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "9.6",
+          "sectionId": "9.6",
+          "extractedCount": 50,
+          "skippedCount": 0
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "fileName": "NEC_ASoE_Ch10_Project_Planning_Practice_360_MCQs.xlsx",
+      "workbookTitle": "NEC Licence Exam - Software Engineering (ASoE) - Chapter 10: Project Planning, Design and Implementation",
+      "uploadedAt": "2026-11-25T04:49:56.307Z",
+      "totalQuestions": 360,
+      "chaptersCovered": [
+        10
+      ],
+      "sectionsCovered": [
+        "10.1",
+        "10.2",
+        "10.3",
+        "10.4",
+        "10.5",
+        "10.6"
+      ],
+      "origin": "seeded",
+      "sheetSummaries": [
+        {
+          "sheetName": "10.1",
+          "sectionId": "10.1",
+          "extractedCount": 60,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "10.2",
+          "sectionId": "10.2",
+          "extractedCount": 60,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "10.3",
+          "sectionId": "10.3",
+          "extractedCount": 60,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "10.4",
+          "sectionId": "10.4",
+          "extractedCount": 60,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "10.5",
+          "sectionId": "10.5",
+          "extractedCount": 60,
+          "skippedCount": 0
+        },
+        {
+          "sheetName": "10.6",
+          "sectionId": "10.6",
+          "extractedCount": 60,
+          "skippedCount": 0
+        }
+      ],
+      "warnings": []
+    }
+  ]
+}

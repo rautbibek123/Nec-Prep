@@ -1,35 +1,40 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   ArrowRight,
   Award,
   Clock,
   History,
+  Lock,
   Play,
+  ShieldCheck,
   Trash2,
 } from 'lucide-react';
-import { deleteSessionById, getAllSessions } from '@/lib/db';
+import { useAuth } from '@/components/AuthProvider';
+import { deleteSessionById, getUserSessions } from '@/lib/db';
 import { calculateExamSummary, formatDuration } from '@/lib/scoring';
 import { ExamSession } from '@/types/mcq';
 
 export default function ResultsHistoryPage() {
+  const { user } = useAuth();
   const [sessions, setSessions] = useState<ExamSession[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const load = async () => {
+  const load = useCallback(async () => {
+    setLoading(true);
     try {
-      const list = await getAllSessions();
+      const list = await getUserSessions(user.id);
       setSessions(list);
     } finally {
       setLoading(false);
     }
-  };
+  }, [user.id]);
 
   useEffect(() => {
     load();
-  }, []);
+  }, [load]);
 
   const handleDelete = async (id: string) => {
     await deleteSessionById(id);
@@ -44,17 +49,25 @@ export default function ResultsHistoryPage() {
             Exam Attempts &amp; Result History
           </h1>
           <p className="text-sm text-slate-600">
-            Review past exam scorecards, section-wise syllabus accuracy, and explanations, or resume
-            an unfinished session.
+            Showing attempts for <strong className="text-slate-800">{user.name}</strong>. Review
+            past scorecards, section accuracy, or resume an unfinished exam.
           </p>
         </div>
-        <Link
-          href="/generator"
-          className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
-        >
-          <Play className="h-4 w-4 fill-current" />
-          New Exam
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/sets"
+            className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
+          >
+            <Play className="h-4 w-4 fill-current" />
+            100-Q Test Sets
+          </Link>
+          <Link
+            href="/generator"
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            Custom Exam
+          </Link>
+        </div>
       </div>
 
       {loading ? (
@@ -64,13 +77,14 @@ export default function ResultsHistoryPage() {
           <History className="mx-auto h-10 w-10 text-slate-400" />
           <h2 className="text-lg font-bold text-slate-900">No Exam Sessions Yet</h2>
           <p className="text-sm text-slate-500 max-w-md mx-auto">
-            Generate your first chapter-wise or mock exam to track scores, accuracy, and mistakes.
+            Take one of the 30 balanced 100-question mock sets or build a custom chapter exam to
+            track your NEC readiness.
           </p>
           <Link
-            href="/generator"
+            href="/sets"
             className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white"
           >
-            Open Question Generator
+            Browse 100-Q Test Sets
           </Link>
         </div>
       ) : (
@@ -100,7 +114,25 @@ export default function ResultsHistoryPage() {
                     ) : (
                       <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-bold text-amber-800 ring-1 ring-amber-200">
                         <Clock className="h-3.5 w-3.5" />
-                        In Progress ({summary.attempted}/{summary.totalQuestions} Locked)
+                        In Progress ({summary.attempted}/{summary.totalQuestions})
+                      </span>
+                    )}
+
+                    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                      {s.mode === 'exam' ? (
+                        <>
+                          <ShieldCheck className="h-3 w-3 text-indigo-600" /> Real Exam
+                        </>
+                      ) : (
+                        <>
+                          <Lock className="h-3 w-3 text-amber-600" /> Practice
+                        </>
+                      )}
+                    </span>
+
+                    {s.setNumber && (
+                      <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-bold text-indigo-700">
+                        Set #{s.setNumber}
                       </span>
                     )}
 
@@ -111,7 +143,7 @@ export default function ResultsHistoryPage() {
 
                   <h3 className="text-base font-bold text-slate-900">{s.title}</h3>
                   <p className="text-xs text-slate-600">
-                    Sections: {s.config.selectedSections.join(', ')} • Correct:{' '}
+                    {s.config.selectedSections.length} section(s) • Correct:{' '}
                     <strong className="text-emerald-700">{summary.correct}</strong> • Wrong:{' '}
                     <strong className="text-rose-600">{summary.wrong}</strong> • Skipped:{' '}
                     <strong>{summary.skipped}</strong> • Time:{' '}
@@ -135,6 +167,7 @@ export default function ResultsHistoryPage() {
                   <button
                     type="button"
                     onClick={() => handleDelete(s.id)}
+                    aria-label={`Delete session ${s.title}`}
                     className="rounded-xl p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 cursor-pointer"
                     title="Delete session"
                   >
@@ -149,4 +182,3 @@ export default function ResultsHistoryPage() {
     </div>
   );
 }
-

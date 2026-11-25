@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -9,32 +9,36 @@ import {
   ChevronRight,
   Clock,
   Layers,
+  Lock,
   Play,
   Settings2,
+  ShieldCheck,
   Shuffle,
-  Sparkles,
   Square,
   Upload,
 } from 'lucide-react';
 import { NEC_ASOE_SYLLABUS } from '@/data/nec-asoe-syllabus';
-import { createSession, getAllQuestions, getAllSessions } from '@/lib/db';
+import { useAuth } from '@/components/AuthProvider';
+import { useAppData } from '@/components/AppDataProvider';
 import {
-  buildExamSession,
-  computeHistoricalQuestionStats,
-  filterPoolByConfig,
-} from '@/lib/exam-generator';
-import { loadBundledChapter1Sample } from '@/lib/sample-loader';
-import { ExamSession, MCQQuestion, QuestionPoolFilter } from '@/types/mcq';
+  createSession,
+  getQuestionsBySections,
+  getUserStatsMap,
+} from '@/lib/db';
+import { buildExamSession, filterPoolByConfig } from '@/lib/exam-generator';
+import { ExamMode, MCQQuestion, QuestionPoolFilter, QuestionStatRecord } from '@/types/mcq';
 
 function GeneratorContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const configCardRef = useRef<HTMLDivElement | null>(null);
 
-  const [questions, setQuestions] = useState<MCQQuestion[]>([]);
-  const [pastSessions, setPastSessions] = useState<ExamSession[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [seeding, setSeeding] = useState(false);
+  const { user } = useAuth();
+  const { ready, seeding, summary } = useAppData();
+
+  const [statsMap, setStatsMap] = useState<Map<string, QuestionStatRecord>>(new Map());
+  const [scopedQuestions, setScopedQuestions] = useState<MCQQuestion[]>([]);
+  const [loadingPool, setLoadingPool] = useState(false);
 
   const [selectedSections, setSelectedSections] = useState<Set<string>>(new Set());
   const [expandedChapters, setExpandedChapters] = useState<Set<number>>(new Set([1]));
@@ -42,72 +46,55 @@ function GeneratorContent() {
   const [questionCount, setQuestionCount] = useState<number>(30);
   const [useAllInPool, setUseAllInPool] = useState<boolean>(false);
   const [shuffleQuestions, setShuffleQuestions] = useState<boolean>(true);
+  const [shuffleOptions, setShuffleOptions] = useState<boolean>(false);
   const [balancedAcrossSections, setBalancedAcrossSections] = useState<boolean>(true);
   const [poolFilter, setPoolFilter] = useState<QuestionPoolFilter>('all');
+  const [mode, setMode] = useState<ExamMode>('practice');
   const [timeLimitMinutes, setTimeLimitMinutes] = useState<number | null>(30);
   const [examTitle, setExamTitle] = useState<string>('');
   const [launching, setLaunching] = useState<boolean>(false);
+  const [initializedScope, setInitializedScope] = useState(false);
 
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const [qs, sess] = await Promise.all([getAllQuestions(), getAllSessions()]);
-      setQuestions(qs);
-      setPastSessions(sess);
-
-      const paramChapter = searchParams.get('chapter');
-      const paramSection = searchParams.get('section');
-
-      const populatedSecs = new Set(qs.map((q) => q.sectionId));
-
-      if (paramSection && populatedSecs.has(paramSection)) {
-        setSelectedSections(new Set([paramSection]));
-        const chNum = Number(paramSection.split('.')[0]) || 1;
-        setExpandedChapters(new Set([chNum]));
-      } else if (paramChapter) {
-        const chNum = Number(paramChapter);
-        const chSecs = qs
-          .filter((q) => q.chapterNumber === chNum)
-          .map((q) => q.sectionId);
-        setSelectedSections(new Set(chSecs.length > 0 ? chSecs : Array.from(populatedSecs)));
-        setExpandedChapters(new Set([chNum]));
-      } else {
-        setSelectedSections(populatedSecs);
-        const firstPopulatedChapter = qs[0]?.chapterNumber ?? 1;
-        setExpandedChapters(new Set([firstPopulatedChapter]));
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // Initialize selection from query params once AppDataProvider summary is ready
   useEffect(() => {
-    loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (!ready || seeding || initializedScope) return;
 
-  const handleSeedSample = async () => {
-    setSeeding(true);
-    try {
-      await loadBundledChapter1Sample();
-      await loadData();
-    } finally {
-      setSeeding(false);
+    const populatedSecs = Object.entries(summary.sectionCounts)
+      .filter(([, cnt]) => cnt > 0)
+      .map(([secId]) => secId);
+
+    const paramChapter = searchParams.get('chapter');
+    const paramSection = searchParams.get('section');
+
+    if (paramSection && (summary.sectionCounts[paramSection] ?? 0) > 0) {
+      setSelectedSections(new Set([paramSection]));
+      const chNum = Number(paramSection.split('.')[0]) || 1;
+      setExpandedChapters(new Set([chNum]));
+    } else if (paramChapter) {
+      const chNum = Number(paramChapter);
+      const chSecs = populatedSecs.filter((id) => Number(id.split('.')[0]) === chNum);
+      setSelectedSections(new Set(chSecs.length > 0 ? chSecs : populatedSecs));
+      setExpandedChapters(new Set([chNum]));
+    } else {
+      setSelectedSections(new Set(populatedSecs));
+      setExpandedChapters(new Set([1]));
     }
-  };
 
-  const sectionCounts = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const q of questions) {
-      map.set(q.sectionId, (map.get(q.sectionId) ?? 0) + 1);
-    }
-    return map;
-  }, [questions]);
+    setInitializedScope(true);
+  }, [ready, seeding, initializedScope, summary.sectionCounts, searchParams]);
 
-  const historyStats = useMemo(
-    () => computeHistoricalQuestionStats(pastSessions),
-    [pastSessions]
-  );
+  // Load user stats map when user changes
+  useEffect(() => {
+    let active = true;
+    getUserStatsMap(user.id)
+      .then((map) => {
+        if (active) setStatsMap(map);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [user.id]);
 
   const selectedSectionList = useMemo(
     () =>
@@ -116,6 +103,42 @@ function GeneratorContent() {
       ),
     [selectedSections]
   );
+
+  // Fast indexed query fetching ONLY the selected sections from IndexedDB
+  const loadScopedPool = useCallback(async (sections: string[]) => {
+    if (sections.length === 0) {
+      setScopedQuestions([]);
+      return;
+    }
+    setLoadingPool(true);
+    try {
+      const qs = await getQuestionsBySections(sections);
+      setScopedQuestions(qs);
+    } finally {
+      setLoadingPool(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!ready || seeding) return;
+    loadScopedPool(selectedSectionList);
+  }, [ready, seeding, selectedSectionList, loadScopedPool]);
+
+  const globalStatCounts = useMemo(() => {
+    let attempted = 0;
+    let wrongLatest = 0;
+    let bookmarked = 0;
+    for (const st of statsMap.values()) {
+      if (st.attempts > 0) attempted++;
+      if (st.lastIsCorrect === false) wrongLatest++;
+      if (st.bookmarked) bookmarked++;
+    }
+    return {
+      unseen: Math.max(0, summary.totalQuestions - attempted),
+      wrongLatest,
+      bookmarked,
+    };
+  }, [statsMap, summary.totalQuestions]);
 
   const selectedChaptersList = useMemo(() => {
     const chSet = new Set<number>();
@@ -128,11 +151,11 @@ function GeneratorContent() {
 
   const eligiblePool = useMemo(
     () =>
-      filterPoolByConfig(questions, pastSessions, {
+      filterPoolByConfig(scopedQuestions, statsMap, {
         selectedSections: selectedSectionList,
         poolFilter,
       }),
-    [questions, pastSessions, selectedSectionList, poolFilter]
+    [scopedQuestions, statsMap, selectedSectionList, poolFilter]
   );
 
   const effectiveCount = useAllInPool
@@ -140,7 +163,7 @@ function GeneratorContent() {
     : Math.min(Math.max(1, questionCount), eligiblePool.length);
 
   const toggleSection = (sectionId: string) => {
-    if ((sectionCounts.get(sectionId) ?? 0) === 0) return;
+    if ((summary.sectionCounts[sectionId] ?? 0) === 0) return;
     setSelectedSections((prev) => {
       const next = new Set(prev);
       if (next.has(sectionId)) next.delete(sectionId);
@@ -154,7 +177,7 @@ function GeneratorContent() {
     if (!ch) return;
     const populatedIds = ch.sections
       .map((s) => s.sectionId)
-      .filter((id) => (sectionCounts.get(id) ?? 0) > 0);
+      .filter((id) => (summary.sectionCounts[id] ?? 0) > 0);
     if (populatedIds.length === 0) return;
 
     const allSelected = populatedIds.every((id) => selectedSections.has(id));
@@ -179,7 +202,10 @@ function GeneratorContent() {
   };
 
   const selectAllPopulated = () => {
-    setSelectedSections(new Set(questions.map((q) => q.sectionId)));
+    const allPopulated = Object.entries(summary.sectionCounts)
+      .filter(([, cnt]) => cnt > 0)
+      .map(([id]) => id);
+    setSelectedSections(new Set(allPopulated));
   };
 
   const clearSelection = () => {
@@ -224,16 +250,20 @@ function GeneratorContent() {
           : `NEC ASoE Exam — Chapters ${selectedChaptersList.join(', ')}`);
 
       const session = buildExamSession({
+        userId: user.id,
         title: autoTitle,
         pool: eligiblePool,
+        mode,
         config: {
           selectedChapters: selectedChaptersList,
           selectedSections: selectedSectionList,
           totalQuestions: effectiveCount,
           shuffleQuestions,
+          shuffleOptions,
           balancedAcrossSections,
           poolFilter,
           timeLimitMinutes,
+          mode,
         },
       });
 
@@ -244,34 +274,24 @@ function GeneratorContent() {
     }
   };
 
-  if (!loading && questions.length === 0) {
+  if (ready && !seeding && summary.totalQuestions === 0) {
     return (
       <div className="mx-auto max-w-4xl px-4 py-14 text-center space-y-5">
         <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
           <Layers className="h-8 w-8" />
         </div>
-        <h1 className="text-2xl font-bold text-slate-900">No Questions in Local Bank Yet</h1>
+        <h1 className="text-2xl font-bold text-slate-900">No Questions in Local Bank</h1>
         <p className="mx-auto max-w-lg text-sm text-slate-600">
-          Upload an Excel MCQ workbook (or load your Chapter 1 Fundamentals of IT 180-MCQ workbook
-          with one click) to generate chapter-wise and section-wise exams.
+          Upload an Excel MCQ workbook or re-seed the default 3,180-MCQ bank from the Question Bank
+          page.
         </p>
-        <div className="flex flex-wrap items-center justify-center gap-3">
-          <button
-            onClick={handleSeedSample}
-            disabled={seeding}
-            className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-xs hover:bg-indigo-700 disabled:opacity-60 cursor-pointer"
-          >
-            <Sparkles className="h-4 w-4" />
-            {seeding ? 'Loading 180 MCQs...' : 'Load Sample Chapter 1 (180 MCQs)'}
-          </button>
-          <Link
-            href="/upload"
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-          >
-            <Upload className="h-4 w-4" />
-            Upload Custom Excel (.xlsx)
-          </Link>
-        </div>
+        <Link
+          href="/upload"
+          className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
+        >
+          <Upload className="h-4 w-4" />
+          Open Question Bank
+        </Link>
       </div>
     );
   }
@@ -285,8 +305,8 @@ function GeneratorContent() {
             Chapter-Wise &amp; Section-Wise Question Generator
           </h1>
           <p className="text-xs sm:text-sm text-slate-600 mt-1">
-            Select chapters or sub-topics from the NEC Software Engineering (ASoE) syllabus, choose
-            question count &amp; timer, and begin your locked exam.
+            Select chapters or sub-topics across the {summary.totalQuestions.toLocaleString()}-MCQ
+            bank, pick Practice or Real Exam mode, and launch.
           </p>
         </div>
 
@@ -318,7 +338,7 @@ function GeneratorContent() {
             onClick={() => applyPreset('allUntimed')}
             className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:border-indigo-300 hover:text-indigo-700 cursor-pointer"
           >
-            Full Bank (Untimed)
+            Full Scope (Untimed)
           </button>
         </div>
       </div>
@@ -329,7 +349,8 @@ function GeneratorContent() {
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs">
             <span className="font-semibold text-slate-700">
               Selected: {selectedSectionList.length} section
-              {selectedSectionList.length === 1 ? '' : 's'} ({eligiblePool.length} Qs)
+              {selectedSectionList.length === 1 ? '' : 's'} (
+              {loadingPool ? '...' : eligiblePool.length} Qs)
             </span>
             <div className="flex items-center gap-3">
               <button
@@ -352,10 +373,10 @@ function GeneratorContent() {
 
           {NEC_ASOE_SYLLABUS.map((ch) => {
             const populatedSections = ch.sections.filter(
-              (s) => (sectionCounts.get(s.sectionId) ?? 0) > 0
+              (s) => (summary.sectionCounts[s.sectionId] ?? 0) > 0
             );
             const chTotal = ch.sections.reduce(
-              (sum, s) => sum + (sectionCounts.get(s.sectionId) ?? 0),
+              (sum, s) => sum + (summary.sectionCounts[s.sectionId] ?? 0),
               0
             );
             const selectedInCh = populatedSections.filter((s) =>
@@ -379,16 +400,12 @@ function GeneratorContent() {
                       type="button"
                       disabled={chTotal === 0}
                       onClick={() => toggleChapter(ch.chapterNumber)}
+                      aria-label={`Toggle Chapter ${ch.chapterNumber}`}
                       className={`mt-0.5 sm:mt-0 shrink-0 transition ${
                         chTotal === 0
                           ? 'cursor-not-allowed text-slate-300'
                           : 'cursor-pointer text-indigo-600 hover:text-indigo-700'
                       }`}
-                      title={
-                        chTotal === 0
-                          ? 'Upload Excel file for this chapter first'
-                          : 'Toggle entire chapter'
-                      }
                     >
                       {allChSelected ? (
                         <CheckSquare className="h-5 w-5" />
@@ -401,6 +418,7 @@ function GeneratorContent() {
 
                     <button
                       type="button"
+                      aria-expanded={isExpanded}
                       onClick={() => toggleExpandChapter(ch.chapterNumber)}
                       className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 text-left min-w-0 cursor-pointer"
                     >
@@ -424,25 +442,16 @@ function GeneratorContent() {
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
-                    {chTotal > 0 ? (
-                      <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] sm:text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
-                        {chTotal} Qs
-                      </span>
-                    ) : (
-                      <Link
-                        href="/upload"
-                        className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-500 hover:bg-indigo-50 hover:text-indigo-700"
-                      >
-                        Upload
-                      </Link>
-                    )}
+                    <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] sm:text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                      {chTotal} Qs
+                    </span>
                   </div>
                 </div>
 
                 {isExpanded && (
                   <div className="border-t border-slate-100 divide-y divide-slate-100 px-3.5 sm:px-4 py-1">
                     {ch.sections.map((sec) => {
-                      const count = sectionCounts.get(sec.sectionId) ?? 0;
+                      const count = summary.sectionCounts[sec.sectionId] ?? 0;
                       const checked = selectedSections.has(sec.sectionId);
                       return (
                         <label
@@ -502,8 +511,47 @@ function GeneratorContent() {
             <h2 className="text-lg font-bold text-slate-900">Exam Configuration</h2>
             <p className="text-xs text-slate-500">
               Pool matching selection:{' '}
-              <strong className="text-indigo-700">{eligiblePool.length} MCQs available</strong>
+              <strong className="text-indigo-700">
+                {loadingPool ? 'Loading...' : `${eligiblePool.length} MCQs available`}
+              </strong>
             </p>
+          </div>
+
+          {/* Exam Mode Selector */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+              Exam Mode
+            </label>
+            <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Exam mode">
+              <button
+                type="button"
+                role="radio"
+                aria-checked={mode === 'practice'}
+                onClick={() => setMode('practice')}
+                className={`flex items-center justify-center gap-1.5 rounded-xl border py-2 px-2.5 text-xs font-bold transition cursor-pointer ${
+                  mode === 'practice'
+                    ? 'border-amber-500 bg-amber-50 text-amber-900'
+                    : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <Lock className="h-3.5 w-3.5 text-amber-600" />
+                Practice Lock
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={mode === 'exam'}
+                onClick={() => setMode('exam')}
+                className={`flex items-center justify-center gap-1.5 rounded-xl border py-2 px-2.5 text-xs font-bold transition cursor-pointer ${
+                  mode === 'exam'
+                    ? 'border-indigo-600 bg-indigo-50 text-indigo-800'
+                    : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <ShieldCheck className="h-3.5 w-3.5 text-indigo-600" />
+                Real Exam
+              </button>
+            </div>
           </div>
 
           {/* Custom Title */}
@@ -513,7 +561,7 @@ function GeneratorContent() {
             </label>
             <input
               type="text"
-              placeholder="e.g., Chapter 1 Full Mock Test"
+              placeholder="e.g., Chapter 4 DSA + DBMS Drill"
               value={examTitle}
               onChange={(e) => setExamTitle(e.target.value)}
               className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs focus:border-indigo-500 focus:outline-none"
@@ -523,7 +571,7 @@ function GeneratorContent() {
           {/* Question Pool Filter */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-              Question History Filter
+              Question History Filter ({user.name})
             </label>
             <div className="grid grid-cols-1 gap-1.5">
               {(
@@ -531,13 +579,15 @@ function GeneratorContent() {
                   { id: 'all', label: 'All Questions in Selected Scope' },
                   {
                     id: 'unattempted',
-                    label: `Unattempted Only (${
-                      questions.length - historyStats.attemptedIds.size
-                    } unseen globally)`,
+                    label: `Unattempted Only (${globalStatCounts.unseen} unseen globally)`,
                   },
                   {
                     id: 'wrong_previously',
-                    label: `Previously Wrong Only (${historyStats.wrongLatestIds.size} to master)`,
+                    label: `Previously Wrong Only (${globalStatCounts.wrongLatest} to master)`,
+                  },
+                  {
+                    id: 'bookmarked',
+                    label: `Bookmarked Only (${globalStatCounts.bookmarked} saved)`,
                   },
                 ] as const
               ).map((opt) => (
@@ -598,6 +648,7 @@ function GeneratorContent() {
             {!useAllInPool && eligiblePool.length > 1 && (
               <input
                 type="range"
+                aria-label="Number of questions slider"
                 min={1}
                 max={Math.max(1, eligiblePool.length)}
                 value={Math.min(questionCount, Math.max(1, eligiblePool.length))}
@@ -668,26 +719,44 @@ function GeneratorContent() {
                 />
               </label>
             )}
+
+            <label className="flex items-center justify-between cursor-pointer">
+              <span className="font-medium text-slate-700">Shuffle Options (A–D)</span>
+              <input
+                type="checkbox"
+                checked={shuffleOptions}
+                onChange={(e) => setShuffleOptions(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-indigo-600"
+              />
+            </label>
           </div>
 
-          {/* Exam Rules Reminder */}
+          {/* Mode Reminder */}
           <div className="rounded-xl bg-amber-50/90 border border-amber-200 p-3 text-[11px] text-amber-900 space-y-1">
-            <div className="font-bold">Strict Exam Rules Active:</div>
-            <div>• Clicking an option permanently locks that question (no re-selection).</div>
-            <div>• Wrong choices immediately reveal the Correct Option + Explanation.</div>
+            {mode === 'practice' ? (
+              <>
+                <div className="font-bold">Practice Lock Mode:</div>
+                <div>• First click locks permanently and reveals the answer + reason.</div>
+              </>
+            ) : (
+              <>
+                <div className="font-bold">Real NEC Exam Mode:</div>
+                <div>• Change choices freely and view results + explanations on submit.</div>
+              </>
+            )}
           </div>
 
           <button
             type="button"
             disabled={eligiblePool.length === 0 || launching}
             onClick={handleStartExam}
-            className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+            className="w-full inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
           >
             <Play className="h-4 w-4 fill-current" />
             {launching
               ? 'Preparing Exam...'
               : eligiblePool.length === 0
-              ? 'Select Sections with Questions'
+              ? 'No Questions Match Scope'
               : `Start Exam (${effectiveCount} MCQs)`}
           </button>
         </div>
@@ -712,7 +781,7 @@ function GeneratorContent() {
               onClick={() =>
                 configCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
               }
-              className="inline-flex items-center gap-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700"
+              className="inline-flex min-h-[40px] items-center gap-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700"
             >
               <Settings2 className="h-3.5 w-3.5" />
               Settings
@@ -721,7 +790,7 @@ function GeneratorContent() {
               type="button"
               disabled={eligiblePool.length === 0 || launching}
               onClick={handleStartExam}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white disabled:opacity-50"
+              className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white disabled:opacity-50"
             >
               <Play className="h-3.5 w-3.5 fill-current" />
               Start ({effectiveCount})
